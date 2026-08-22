@@ -2,6 +2,8 @@
  * Complete it?
  * Linker stuff
  * Sync and conter stuff - DONE
+ * Replace vector with a VLA
+ * Variadic arg err functions
  */
 
 
@@ -22,43 +24,56 @@
 
 static sem_t sem;
 
-static vector_t *
+inline static vector_t *
 make_argv(const struct data_t *data)
 {
-	vector_t *vector = vector_new(20, sizeof(char*));
+	vector_t *vector = vector_new(20, sizeof(char*)); /* XXX: magic value? */
 	if(!vector)
 		return NULL;
 
 	/* append compiler and flag to make object files */
-	vector_append(vector, data->cc);
-	vector_append(vector, data->objFlag);
+	vector_append(vector, &(data->cc));
+	vector_append(vector, &(data->objFlag));
 
 	/* return now if no flag file */
 	if(!data->flagFile)
 		return vector;
 
 	/* loop through flag file */
-	char line[512];
-	while((fgets(line, sizeof(line), data->flagFile)) != NULL)
+	char *line = malloc(VALUE_SIZE);
+	if(!line)
+		goto err;
+
+	while((fgets(line, VALUE_SIZE, data->flagFile)) != NULL)
 	{
 		line[strcspn(line, "\n")] = '\0';
-		vector_append(vector, line);
+		if(!vector_append(vector, &line))
+			goto err;
+
+		line = malloc(VALUE_SIZE);
+		if(!line)
+			goto err;
 	}
 
 	/* reserve for file and NULL */
-	vector_reserve_with_null(vector, vector_size(vector) + 2);
+	if(!vector_reserve_with_null(vector, vector_size(vector) + 2))
+		goto err;
 
 	return vector;
+
+err:
+	vector_loop_free(&vector);
+	return NULL;
 }
 
 /*
  * Search in the (open) file for fileName, then compare currentTime with
  * oldTime to check blah blah blah
  */
-static int
+inline static int
 has_changed(FILE *file, const char *fileName, const time_t currentTime)
 {
-	char line[1024];
+	char line[VALUE_SIZE];
 	time_t oldTime;
 	while(fgets(line, sizeof(line), file)) /* lookup fileName */
 	{
@@ -88,7 +103,7 @@ has_changed(FILE *file, const char *fileName, const time_t currentTime)
  * We need a wrapper since exec* functions require more than
  * the void* argument pthread_create() provides
  */
-static void*
+inline static void*
 exec_cc(void *arg)
 {
 	/* No idea how to do this either */
@@ -96,34 +111,99 @@ exec_cc(void *arg)
 	vector_t *vector = arg;
 
 	sem_wait(&sem);
-	execvp(vector_at(vector, 0), vector_data(vector));
-	sem_post(&sem);
+	pid_t pid = fork();
+	if(pid < 0)
+	{
+		fprintf(stderr, "Failed to fork: %s \n", strerror(errno));
+		return NULL;
+	} else if(pid == 0) /* child */
+	{
+		for(uint32_t i = 0; i < vector_size(vector); ++i)
+			printf("%s ", *(char**)vector_at(vector, i));
+		printf("\n");
 
-	return NULL;
+		execvp(*(char**)vector_at(vector, 0), (char**)vector_data(vector));
+
+		/* if exec returns, then it failed */
+		fprintf(stderr, "%s: %s \n", *(char**)vector_at(vector, 0), strerror(errno));
+	} else /* parent */
+	{
+		waitpid(pid, NULL, 0);
+		sem_post(&sem);
+		return NULL;
+	}
 }
 
-void
+static inline int
+loop_srcdir(const char *srcdir, const struct data_t *data, vector_t *vector)
+{
+	DIR *dir = opendir(data->srcdirs);
+	if(!dir)
+	{
+		fprintf(stderr, "Could not open \"%s\": %s \n", srcdir, strerror(errno));
+		return -1;
+	}
+
+	/* loop through srcdir */
+	for(struct dirent *dirEntry = readdir(dir); dirEntry; dirEntry = readdir(dir))
+	{
+		if(!strends(dirEntry->d_name, data->ext))
+			continue;
+
+		char *filePath = malloc(VALUE_SIZE);
+		if(!filePath)
+		{
+			fprintf(stderr, "Cant allocate: %s \n", strerror(errno));
+			return -1;
+		}
+		snprintf(filePath, VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
+
+		struct stat st;
+		if(stat(filePath, &st) < 0)
+		{
+			fprintf(stderr, "%s: %s \n", filePath, strerror(errno));
+			continue;
+		}
+
+		// if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
+		// 	continue;
+
+		/* Note for self: size - 1 is NULL. vector[size] */
+		/* is not guaranteed to be NULL */
+		vector_replace(vector, vector_size(vector) - 2, &filePath);
+
+		pthread_t pthread_id;
+		pthread_create(&pthread_id, NULL, exec_cc, vector);
+	}
+
+	closedir(dir);
+
+	return 0;
+}
+
+int
 compile(const struct data_t *data)
 {
 	if(!data)
-		return;
+		return -1;
 
 	/* by default they are NULL, as set in main.c */
 	if(!data->builddir ||
 		!data->srcdirs ||
 		!data->incdirs ||
 		!data->ext ||
+		!data->objFlag ||
 		!data->cc)
 	{
 		fprintf(stderr, "ERROR: One or more config keys are not set in the template \n");
-		return;
+		return -1;
 	}
 
 	FILE *timestampsFile = fopen(CHANGEFILE_FILENAME, "a+");
 	if(!timestampsFile)
 	{
 		fprintf(stderr, "Error opening %s: %s \n", CHANGEFILE_FILENAME, strerror(errno));
-		return;
+		return -1;
 	}
 	
 	/* sem_init(3)§ERRORS
@@ -133,55 +213,27 @@ compile(const struct data_t *data)
 	if(sem_init(&sem, 0, data->threads) < 0)
 	{
 		fprintf(stderr, "Could not open semaphore: %s \n", strerror(errno));
-		return;
+		return -1;
 	}
 
 	vector_t *vector = make_argv(data);
-
-	/* loop through specified srcdirs */
-	char *srcdir = strtok(data->srcdirs, "\t ");
-	while(srcdir)
+	if(!vector)
 	{
-		/* open it */
-		DIR *dir = opendir(data->srcdirs);
-		if(!dir)
-		{
-			fprintf(stderr, "Could not open \"%s\": %s \n", srcdir, strerror(errno));
-			continue;
-		}
-
-		/* loop through srcdir */
-		struct dirent *dirEntry;
-		while((dirEntry = readdir(dir)) != NULL)
-		{
-			if(!strends(dirEntry->d_name, data->ext))
-				continue;
-
-			char filePath[sizeof(data->srcdirs)];
-			snprintf(filePath, sizeof(filePath), "%s/%s", srcdir, dirEntry->d_name);
-
-			struct stat st;
-			if(stat(filePath, &st) < 0)
-			{
-				fprintf(stderr, "%s: %s \n", filePath, strerror(errno));
-				continue;
-			}
-
-			if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
-				continue;
-
-			/* Note for self: size - 1 is NULL. vector[size] */
-			/* is not guaranteed to be NULL */
-			vector_replace(vector, vector_size(vector) - 2, filePath);
-
-			pthread_t pthread_id;
-			pthread_create(&pthread_id, NULL, exec_cc, vector);
-		}
-
-		/* close it and get new srcdir */
-		closedir(dir);
-		srcdir = strtok(NULL, "\t ");
+		fprintf(stderr, "Failure making argument vector: %s \n", strerror(errno));
+		return -1;
 	}
 
-	vector_free(&vector);
+	/* loop through specified srcdirs */
+	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
+	{
+		if(loop_srcdir(srcdir, data, vector) < 0)
+		{
+			fprintf(stderr, "Stopping compiling step due to a previous error \n");
+			return -1;
+		}
+	}
+
+	vector_loop_free(&vector);
+
+	return 0;
 }
