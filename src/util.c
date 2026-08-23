@@ -2,8 +2,11 @@
 #include <errno.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include "util.h"
+#include "misc.h"
 
 struct configPair_t
 {
@@ -21,20 +24,19 @@ strends(const char *A, const char *B)
 	return c && strcmp(c, B) == 0 ? 1 : 0;
 }
 
-void
+int
 parse_template(struct data_t *data, const char *templatePath)
 {
 	const FILE *template = fopen(templatePath, "r");
 	if(!template)
 	{
-		fprintf(stderr, "Cant open \"%s\": %s \n", templatePath, strerror(errno));
-		exit(-1);
+		print_err(LOG_ERR, "Cant open \"%s\": %s \n", templatePath, STRERROR);
+		return -1;
 	}
 
 	struct configPair_t configPairs[] =
 	{
 		{ "SRCDIR", &(data->srcdirs) },
-		{ "INCDIR", &data->incdirs },
 		{ "BUILDDIR", &data->builddir },
 		{ "EXT", &data->ext },
 		{ "CC", &data->cc },
@@ -55,7 +57,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		char *value = strchr(line, ' ');
 		if(!value || *(++value) == '\0')
 		{
-			fprintf(stderr, "WARNING: \"%s\" has no value assigned to it \n", line);
+			print_err(LOG_WARN, "\"%s\" has no value assigned to it \n", line);
 			continue;
 		}
 
@@ -66,7 +68,10 @@ parse_template(struct data_t *data, const char *templatePath)
 		{
 			data->flagFile = fopen(value, "r");
 			if(!data->flagFile)
-				fprintf(stderr, "Cant open flagfile \"%s\": %s \n", value, strerror(errno));
+			{
+				print_err(LOG_ERR, "Cant open flagfile \"%s\": %s \n", value, STRERROR);
+				return -1;
+			}
 
 		} else
 		{
@@ -81,8 +86,24 @@ parse_template(struct data_t *data, const char *templatePath)
 					continue;
 
 				if(!configPairs[i].value)
-					fprintf(stderr, "Error assigning \"%s\" to \"%s\": %s \n", line, value, strerror(errno));
+				{
+					print_err(LOG_ERR, "Cant assign \"%s\" to \"%s\": %s \n", line, value, STRERROR);
+					return -1;
+				}
 			}
 		}
 	}
+}
+
+void
+print_err(const enum logLevel_e logLevel, const char *fmt, ...)
+{
+	va_list vl;
+	va_start(vl, fmt);
+
+	const char *logLevels[] = { "ERR", "WARN", "DEBUG" };
+	fprintf(stderr, "%s: ", logLevels[logLevel]);
+	vfprintf(stderr, fmt, vl);
+
+	va_end(vl);
 }

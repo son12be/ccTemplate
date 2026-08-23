@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "compile.h"
+#include "misc.h"
 
 /* bro meson is so much better wtf */
 
@@ -14,7 +15,6 @@ main(int argc, char **argv)
 	struct data_t data = 
 	{
 		.srcdirs = NULL,
-		.incdirs = NULL,
 		.builddir = NULL,
 		.ext = NULL,
 		.cc = NULL,
@@ -42,7 +42,8 @@ main(int argc, char **argv)
 		}
 	}
 
-	parse_template(&data, templatePath);
+	if(parse_template(&data, templatePath) < 0)
+		return -1;
 
 	// printf("%s %s %s %s %s %i\n", data.srcdirs, data.incdirs, data.builddir, data.ext, data.cc, data.threads);
 	compile(&data);

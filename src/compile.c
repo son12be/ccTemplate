@@ -3,7 +3,6 @@
  * Linker stuff
  * Sync and conter stuff - DONE
  * Replace vector with a VLA
- * Variadic arg err functions
  */
 
 
@@ -21,6 +20,7 @@
 #include <vector.h>
 
 #include "util.h"
+#include "misc.h"
 
 static sem_t sem;
 
@@ -62,7 +62,9 @@ make_argv(const struct data_t *data)
 	return vector;
 
 err:
-	vector_loop_free(&vector);
+	for(int i = 0; i < vector_size(vector); ++i)
+		free(*(char**)vector_at(vector, i));
+	vector_free(&vector);
 	return NULL;
 }
 
@@ -114,7 +116,7 @@ exec_cc(void *arg)
 	pid_t pid = fork();
 	if(pid < 0)
 	{
-		fprintf(stderr, "Failed to fork: %s \n", strerror(errno));
+		print_err(LOG_ERR, "Failed to fork: %s \n", STRERROR);
 		return NULL;
 	} else if(pid == 0) /* child */
 	{
@@ -125,7 +127,8 @@ exec_cc(void *arg)
 		execvp(*(char**)vector_at(vector, 0), (char**)vector_data(vector));
 
 		/* if exec returns, then it failed */
-		fprintf(stderr, "%s: %s \n", *(char**)vector_at(vector, 0), strerror(errno));
+		print_err(LOG_ERR, "%s: %s \n", *(char**)vector_at(vector, 0), STRERROR);
+		return NULL;
 	} else /* parent */
 	{
 		waitpid(pid, NULL, 0);
@@ -140,7 +143,7 @@ loop_srcdir(const char *srcdir, const struct data_t *data, vector_t *vector)
 	DIR *dir = opendir(data->srcdirs);
 	if(!dir)
 	{
-		fprintf(stderr, "Could not open \"%s\": %s \n", srcdir, strerror(errno));
+		print_err(LOG_ERR, "Cant open \"%s\": %s \n", srcdir, STRERROR);
 		return -1;
 	}
 
@@ -153,7 +156,7 @@ loop_srcdir(const char *srcdir, const struct data_t *data, vector_t *vector)
 		char *filePath = malloc(VALUE_SIZE);
 		if(!filePath)
 		{
-			fprintf(stderr, "Cant allocate: %s \n", strerror(errno));
+			print_err(LOG_ERR, "Cant allocate: %s \n", STRERROR);
 			return -1;
 		}
 		snprintf(filePath, VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
@@ -161,7 +164,7 @@ loop_srcdir(const char *srcdir, const struct data_t *data, vector_t *vector)
 		struct stat st;
 		if(stat(filePath, &st) < 0)
 		{
-			fprintf(stderr, "%s: %s \n", filePath, strerror(errno));
+			print_err(LOG_ERR, "%s: %s \n", filePath, STRERROR);
 			continue;
 		}
 
@@ -190,19 +193,18 @@ compile(const struct data_t *data)
 	/* by default they are NULL, as set in main.c */
 	if(!data->builddir ||
 		!data->srcdirs ||
-		!data->incdirs ||
 		!data->ext ||
 		!data->objFlag ||
 		!data->cc)
 	{
-		fprintf(stderr, "ERROR: One or more config keys are not set in the template \n");
+		print_err(LOG_ERR, "One or more config keys are not set in the template \n");
 		return -1;
 	}
 
 	FILE *timestampsFile = fopen(CHANGEFILE_FILENAME, "a+");
 	if(!timestampsFile)
 	{
-		fprintf(stderr, "Error opening %s: %s \n", CHANGEFILE_FILENAME, strerror(errno));
+		print_err(LOG_ERR, "Cant open %s: %s \n", CHANGEFILE_FILENAME, STRERROR);
 		return -1;
 	}
 	
@@ -212,14 +214,14 @@ compile(const struct data_t *data)
 	 */
 	if(sem_init(&sem, 0, data->threads) < 0)
 	{
-		fprintf(stderr, "Could not open semaphore: %s \n", strerror(errno));
+		print_err(LOG_ERR, "Cant open semaphore: %s \n", STRERROR);
 		return -1;
 	}
 
 	vector_t *vector = make_argv(data);
 	if(!vector)
 	{
-		fprintf(stderr, "Failure making argument vector: %s \n", strerror(errno));
+		print_err(LOG_ERR, "Failure making argument vector: %s \n", STRERROR);
 		return -1;
 	}
 
@@ -228,12 +230,15 @@ compile(const struct data_t *data)
 	{
 		if(loop_srcdir(srcdir, data, vector) < 0)
 		{
-			fprintf(stderr, "Stopping compiling step due to a previous error \n");
+			print_err(LOG_ERR, "Stopping compiling step due to a previous error \n");
 			return -1;
 		}
 	}
 
-	vector_loop_free(&vector);
+	for(int i = 0; i < vector_size(vector); ++i)
+		free(*(char**)vector_at(vector, i));
+
+	vector_free(&vector);
 
 	return 0;
 }

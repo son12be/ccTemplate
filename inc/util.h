@@ -2,14 +2,20 @@
 
 #include <stdio.h>
 
-#include "misc.h"
-
 #define streq(A, B) (strcmp(A, B) == 0)
+
+#define STRERROR strerror(errno)
+
+enum logLevel_e
+{
+	LOG_ERR = 0,
+	LOG_WARN = 1,
+	LOG_DEBUG = 2,
+};
 
 struct data_t
 {
 	char *srcdirs;
-	char *incdirs;
 	char *builddir;
 	char *ext;
 	char *cc;
@@ -21,5 +27,8 @@ struct data_t
 int
 strends(const char *A, const char *B);
 
-void
+int
 parse_template(struct data_t *data, const char *templatePath);
+
+void
+print_err(const enum logLevel_e logLevel, const char *fmt, ...);
