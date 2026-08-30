@@ -15,57 +15,97 @@
 #include <pthread.h>
 #include <sys/stat.h>
 #include <semaphore.h>
-
-/* in local machine */
-#include <vector.h>
+#include <sys/vfs.h>
+#include <stdlib.h>
 
 #include "util.h"
 #include "misc.h"
 
 static sem_t sem;
 
-inline static vector_t *
-make_argv(const struct data_t *data)
+inline static int
+lines(FILE *file)
 {
-	vector_t *vector = vector_new(20, sizeof(char*)); /* XXX: magic value? */
-	if(!vector)
+	if(!file)
+		return -1;
+
+	const int fd = fileno(file);
+	if(fd < 0)
+		return -1;
+
+	struct statfs st;
+	if(fstatfs(fd, &st) < 0)
+		return -1;
+
+	unsigned int lines = 0;
+	char buf[st.f_bsize];
+	int rc;
+	while((rc = read(fd, buf, sizeof(buf))) > 0)
+		for(int i = 0; i < rc; ++i)
+			if(buf[i] == '\n')
+				lines++;
+
+	rewind(file);
+
+	return lines;
+}
+
+inline static char **
+make_argv(const struct data_t *data, int *argc)
+{
+	if(!argc)
 		return NULL;
 
-	/* append compiler and flag to make object files */
-	vector_append(vector, &(data->cc));
-	vector_append(vector, &(data->objFlag));
-
-	/* return now if no flag file */
+	char **argv;
 	if(!data->flagFile)
-		return vector;
+	{
+		argv = malloc(sizeof(char*) * 4); /* cc, objFlag, source file, and NULL */
+		if(!argv)
+			return NULL;
 
-	/* loop through flag file */
+		argv[0] = data->cc;
+		argv[1] = data->objFlag;
+		argv[3] = NULL;
+
+		*argc = 4;
+
+		return argv;
+	}
+
+	*argc = lines(data->flagFile);
+	if(*argc < 0)
+		return NULL;
+
+	*argc += 4;
+
+	argv = malloc(sizeof(char*) * *argc);
+	if(!argv)
+		return NULL;
+
+	argv[0] = data->cc;
+	argv[1] = data->objFlag;
+	argv[*argc - 1] = NULL;
+
 	char *line = malloc(VALUE_SIZE);
 	if(!line)
-		goto err;
+		return NULL;
 
-	while((fgets(line, VALUE_SIZE, data->flagFile)) != NULL)
+	for(int i = 2; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
 	{
 		line[strcspn(line, "\n")] = '\0';
-		if(!vector_append(vector, &line))
-			goto err;
+		argv[i] = line;
 
 		line = malloc(VALUE_SIZE);
 		if(!line)
-			goto err;
+		{
+			for(int j = 0; j < i; ++j)
+				free(argv[j]);
+			free(argv);
+			return NULL;
+		}
 	}
 
-	/* reserve for file and NULL */
-	if(!vector_reserve_with_null(vector, vector_size(vector) + 2))
-		goto err;
-
-	return vector;
-
-err:
-	for(int i = 0; i < vector_size(vector); ++i)
-		free(*(char**)vector_at(vector, i));
-	vector_free(&vector);
-	return NULL;
+	return argv;
 }
 
 /*
@@ -110,7 +150,11 @@ exec_cc(void *arg)
 {
 	/* No idea how to do this either */
 
-	vector_t *vector = arg;
+	/* IMPORTANT LOOKATME REGRESSION
+	 * Are we so fast that we replace argv[argc - 2] while we run execvp?
+	 */
+
+	char **argc = arg;
 
 	sem_wait(&sem);
 	pid_t pid = fork();
@@ -120,14 +164,14 @@ exec_cc(void *arg)
 		return NULL;
 	} else if(pid == 0) /* child */
 	{
-		for(uint32_t i = 0; i < vector_size(vector); ++i)
-			printf("%s ", *(char**)vector_at(vector, i));
+		for(int i = 0; argc[i] != NULL; ++i)
+			printf("%s ", argc[i]);
 		printf("\n");
 
-		execvp(*(char**)vector_at(vector, 0), (char**)vector_data(vector));
+		execvp(argc[0], argc);
 
 		/* if exec returns, then it failed */
-		print_err(LOG_ERR, "%s: %s \n", *(char**)vector_at(vector, 0), STRERROR);
+		print_err(LOG_ERR, "%s: %s \n", argc, STRERROR);
 		return NULL;
 	} else /* parent */
 	{
@@ -138,7 +182,7 @@ exec_cc(void *arg)
 }
 
 static inline int
-loop_srcdir(const char *srcdir, const struct data_t *data, vector_t *vector)
+loop_srcdir(const char *srcdir, const struct data_t *data, char **argv, const int argc)
 {
 	DIR *dir = opendir(data->srcdirs);
 	if(!dir)
@@ -173,10 +217,10 @@ loop_srcdir(const char *srcdir, const struct data_t *data, vector_t *vector)
 
 		/* Note for self: size - 1 is NULL. vector[size] */
 		/* is not guaranteed to be NULL */
-		vector_replace(vector, vector_size(vector) - 2, &filePath);
+		argv[argc - 2] = filePath;
 
 		pthread_t pthread_id;
-		pthread_create(&pthread_id, NULL, exec_cc, vector);
+		pthread_create(&pthread_id, NULL, exec_cc, argv);
 	}
 
 	closedir(dir);
@@ -218,8 +262,9 @@ compile(const struct data_t *data)
 		return -1;
 	}
 
-	vector_t *vector = make_argv(data);
-	if(!vector)
+	int argc;
+	char **argv = make_argv(data, &argc);
+	if(!argv)
 	{
 		print_err(LOG_ERR, "Failure making argument vector: %s \n", STRERROR);
 		return -1;
@@ -228,17 +273,17 @@ compile(const struct data_t *data)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
 	{
-		if(loop_srcdir(srcdir, data, vector) < 0)
+		if(loop_srcdir(srcdir, data, argv, argc) < 0)
 		{
 			print_err(LOG_ERR, "Stopping compiling step due to a previous error \n");
 			return -1;
 		}
 	}
 
-	for(int i = 0; i < vector_size(vector); ++i)
-		free(*(char**)vector_at(vector, i));
+	for(int i = 0; i < argc; ++i)
+		free(argv[i]);
 
-	vector_free(&vector);
+	free(argv);
 
 	return 0;
 }
