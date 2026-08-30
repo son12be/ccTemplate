@@ -17,7 +17,6 @@ struct data_t
 	char *builddir;
 	char *ext;
 	char *cc;
-	char *objFlag;
 	unsigned int threads;
 	FILE *flagFile;
 };

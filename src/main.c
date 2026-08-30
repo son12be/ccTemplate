@@ -20,7 +20,6 @@ main(int argc, char **argv)
 		.ext = NULL,
 		.cc = NULL,
 		.threads = 1,
-		.objFlag = NULL,
 		.flagFile = NULL,
 	};
 

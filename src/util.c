@@ -38,7 +38,6 @@ parse_template(struct data_t *data, const char *templatePath)
 		{ "BUILDDIR", &data->builddir },
 		{ "EXT", &data->ext },
 		{ "CC", &data->cc },
-		{ "OFLAG", &data->objFlag},
 	};
 
 	char line[VALUE_SIZE];

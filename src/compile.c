@@ -61,45 +61,40 @@ lines(FILE *file)
 }
 
 inline static int
-make_argv(char ***ret, const struct data_t *data, int *argc)
+make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 {
-	if(!argc)
+	if(!argc || !first_opt)
 		return log_err(NULL_POINTER, __FUNCTION__, CURPOS);
 
-	if(!data->flagFile)
+	*argc = 3; /* at least for cc; filepath and NULL */
+
+	/* get argc */
+	for(int i = 0; (data->cc)[i] != '\0'; ++i)
+		if((data->cc)[i] == ' ') (*argc)++;
+	if(data->flagFile)
 	{
-		*ret = malloc(sizeof(char*) * 4); /* cc, objFlag, source file, and NULL */
-		if(!*ret)
-			return log_err(MALLOC, "argv allocation", CURPOS);
-
-		(*ret)[0] = data->cc;
-		(*ret)[1] = data->objFlag;
-		(*ret)[3] = NULL;
-
-		*argc = 4;
-
-		return 0;
+		*argc += lines(data->flagFile);
+		if(*argc < 0)
+			return log_err(-errno, "Flagfile line count", CURPOS);
 	}
 
-	*argc = lines(data->flagFile);
-	if(*argc < 0)
-		return log_err(MALLOC, "Flagfile line count", CURPOS);
+	*first_opt = *argc + 1;
 
-	*argc += 4;
-
+	/* allocate */
 	*ret = malloc(sizeof(char*) * *argc);
 	if(!*ret)
 		return log_err(MALLOC, "argv allocation", CURPOS);
 
-	(*ret)[0] = data->cc;
-	(*ret)[1] = data->objFlag;
-	(*ret)[*argc - 1] = NULL;
+	/* then fill it up */
+	int i = 0;
+	for(char *token = strtok(data->cc, " "); token; token = strtok(NULL, " "), ++i)
+		(*ret)[i] = token;
 
 	char *line = malloc(VALUE_SIZE);
 	if(!line)
 		return log_err(MALLOC, "Flagfile line buffer", CURPOS);
 
-	for(int i = 2; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
+	for(; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
 	{
 		line[strcspn(line, "\n")] = '\0';
 		(*ret)[i] = line;
@@ -113,6 +108,8 @@ make_argv(char ***ret, const struct data_t *data, int *argc)
 			return log_err(MALLOC, "Flagfile line buffer", CURPOS);
 		}
 	}
+
+	(*ret)[*argc - 1] = NULL;
 
 	return 0;
 }
@@ -169,9 +166,9 @@ exec_cc(char **argv)
 		/* TODO
 		 * Move output to a logfile
 		 */
-		// for(int i = 0; argv[i] != NULL; ++i)
-		// 	printf("%s ", argv[i]);
-		// printf("\n");
+		for(int i = 0; argv[i] != NULL; ++i)
+			printf("%s ", argv[i]);
+		printf("\n");
 
 		execvp(argv[0], argv);
 
@@ -233,7 +230,6 @@ compile(const struct data_t *data)
 	if(!data->builddir ||
 		!data->srcdirs ||
 		!data->ext ||
-		!data->objFlag ||
 		!data->cc)
 	{
 		return log_err(BAD_CONFIG, "One or more options are not set", CURPOS);
@@ -251,8 +247,9 @@ compile(const struct data_t *data)
 		return log_err(CANT_OPEN, "Semaphore", CURPOS);
 
 	int argc;
+	int opt_i;
 	char **argv;
-	if(make_argv(&argv, data, &argc) < 0)
+	if(make_argv(&argv, data, &argc, &opt_i) < 0)
 		return get_err();
 
 	const struct sigaction sig = { .sa_handler = sigchild_handler };
@@ -265,8 +262,9 @@ compile(const struct data_t *data)
 			return get_err();
 	}
 
-	for(int i = 0; i < argc; ++i)
-		free(argv[i]);
+	free(argv[0]);
+	for(; opt_i < argc; ++opt_i)
+		free(argv[opt_i]);
 
 	free(argv);
 
