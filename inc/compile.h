@@ -2,5 +2,5 @@
 
 #include "util.h"
 
-void
+int
 compile(const struct data_t *data);

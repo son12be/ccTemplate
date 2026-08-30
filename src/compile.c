@@ -17,11 +17,20 @@
 #include <semaphore.h>
 #include <sys/vfs.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #include "util.h"
 #include "misc.h"
 
+#include "compile.h"
+
 static sem_t sem;
+
+void
+sigchild_handler(int sig)
+{
+	sem_post(&sem);
+}
 
 inline static int
 lines(FILE *file)
@@ -144,39 +153,31 @@ has_changed(FILE *file, const char *fileName, const time_t currentTime)
  * We need a wrapper since exec* functions require more than
  * the void* argument pthread_create() provides
  */
-inline static void*
-exec_cc(void *arg)
+inline static int
+exec_cc(char **argv)
 {
 	/* No idea how to do this either */
-
-	/* IMPORTANT LOOKATME REGRESSION
-	 * Are we so fast that we replace argv[argc - 2] while we run execvp?
-	 */
-
-	char **argc = arg;
 
 	sem_wait(&sem);
 	pid_t pid = fork();
 	if(pid < 0)
 	{
 		print_err(LOG_ERR, "Failed to fork: %s \n", STRERROR);
-		return NULL;
+		return -1;
 	} else if(pid == 0) /* child */
 	{
-		for(int i = 0; argc[i] != NULL; ++i)
-			printf("%s ", argc[i]);
+		for(int i = 0; argv[i] != NULL; ++i)
+			printf("%s ", argv[i]);
 		printf("\n");
 
-		execvp(argc[0], argc);
+		execvp(argv[0], argv);
 
 		/* if exec returns, then it failed */
-		print_err(LOG_ERR, "%s: %s \n", argc, STRERROR);
-		return NULL;
+		print_err(LOG_ERR, "%s: %s \n", argv[0], STRERROR);
+		return -1;
 	} else /* parent */
 	{
-		waitpid(pid, NULL, 0);
-		sem_post(&sem);
-		return NULL;
+		return 0;
 	}
 }
 
@@ -218,8 +219,7 @@ loop_srcdir(const char *srcdir, const struct data_t *data, char **argv, const in
 		/* is not guaranteed to be NULL */
 		argv[argc - 2] = filePath;
 
-		pthread_t pthread_id;
-		pthread_create(&pthread_id, NULL, exec_cc, argv);
+		exec_cc(argv);
 	}
 
 	closedir(dir);
@@ -268,6 +268,9 @@ compile(const struct data_t *data)
 		print_err(LOG_ERR, "Failure making argument vector: %s \n", STRERROR);
 		return -1;
 	}
+
+	const struct sigaction sig = { .sa_handler = sigchild_handler };
+	sigaction(SIGCHLD, &sig, NULL);
 
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
