@@ -50,62 +50,61 @@ lines(FILE *file)
 	return lines;
 }
 
-inline static char **
-make_argv(const struct data_t *data, int *argc)
+inline static int
+make_argv(char ***ret, const struct data_t *data, int *argc)
 {
 	if(!argc)
-		return NULL;
+		return -1;
 
-	char **argv;
 	if(!data->flagFile)
 	{
-		argv = malloc(sizeof(char*) * 4); /* cc, objFlag, source file, and NULL */
-		if(!argv)
-			return NULL;
+		*ret = malloc(sizeof(char*) * 4); /* cc, objFlag, source file, and NULL */
+		if(!*ret)
+			return -1;
 
-		argv[0] = data->cc;
-		argv[1] = data->objFlag;
-		argv[3] = NULL;
+		(*ret)[0] = data->cc;
+		(*ret)[1] = data->objFlag;
+		(*ret)[3] = NULL;
 
 		*argc = 4;
 
-		return argv;
+		return 0;
 	}
 
 	*argc = lines(data->flagFile);
 	if(*argc < 0)
-		return NULL;
+		return -1;
 
 	*argc += 4;
 
-	argv = malloc(sizeof(char*) * *argc);
-	if(!argv)
-		return NULL;
+	*ret = malloc(sizeof(char*) * *argc);
+	if(!*ret)
+		return -1;
 
-	argv[0] = data->cc;
-	argv[1] = data->objFlag;
-	argv[*argc - 1] = NULL;
+	(*ret)[0] = data->cc;
+	(*ret)[1] = data->objFlag;
+	(*ret)[*argc - 1] = NULL;
 
 	char *line = malloc(VALUE_SIZE);
 	if(!line)
-		return NULL;
+		return -1;
 
 	for(int i = 2; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
 	{
 		line[strcspn(line, "\n")] = '\0';
-		argv[i] = line;
+		(*ret)[i] = line;
 
 		line = malloc(VALUE_SIZE);
 		if(!line)
 		{
 			for(int j = 0; j < i; ++j)
-				free(argv[j]);
-			free(argv);
-			return NULL;
+				free((*ret)[j]);
+			free(*ret);
+			return -1;
 		}
 	}
 
-	return argv;
+	return 0;
 }
 
 /*
@@ -263,8 +262,8 @@ compile(const struct data_t *data)
 	}
 
 	int argc;
-	char **argv = make_argv(data, &argc);
-	if(!argv)
+	char **argv;
+	if(make_argv(&argv, data, &argc) < 0)
 	{
 		print_err(LOG_ERR, "Failure making argument vector: %s \n", STRERROR);
 		return -1;

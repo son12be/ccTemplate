@@ -77,22 +77,16 @@ parse_template(struct data_t *data, const char *templatePath)
 		{
 			for(int i = 0; i < sizeof(configPairs) / sizeof(struct configPair_t); ++i)
 			{
-				if(streq(line, configPairs[i].key))
-				{
-					*((char**)configPairs[i].value) = malloc(strlen(value) + 1);
-					memcpy(*((char**)configPairs[i].value), value, strlen(value) + 1);
-				}
-				else
+				if(!streq(line, configPairs[i].key))
 					continue;
 
-				if(!configPairs[i].value)
-				{
-					print_err(LOG_ERR, "Cant assign \"%s\" to \"%s\": %s \n", line, value, STRERROR);
-					return -1;
-				}
+				*((char**)configPairs[i].value) = malloc(strlen(value) + 1);
+				memcpy(*((char**)configPairs[i].value), value, strlen(value) + 1);
 			}
 		}
 	}
+
+	return 0;
 }
 
 void
