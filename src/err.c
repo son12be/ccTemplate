@@ -35,6 +35,8 @@ report_err()
 	 * Colors: Red for err info; green for hint and blue for location
 	 */
 
+	fprintf(stderr, "\033[1;31m");
+
 	if(s_Code < 0)
 	{
 		fprintf(stderr, "%s", strerror(-s_Code));
@@ -60,8 +62,8 @@ report_err()
 		}
 	}
 	if(s_Context)
-		fprintf(stderr, ". Hint: %s", s_Context);
-	fprintf(stderr, ". At %s \n", s_Location);
+		fprintf(stderr, ".\033[1;32m Hint: %s", s_Context);
+	fprintf(stderr, ".\033[1;34m At %s \033[0m\n", s_Location);
 
 	return s_Code;
 }

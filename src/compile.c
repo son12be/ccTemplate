@@ -2,7 +2,7 @@
  * Complete it?
  * Linker stuff
  * Sync and conter stuff - DONE
- * Replace vector with a VLA
+ * Replace vector with a VLA - DONE
  */
 
 
@@ -166,14 +166,19 @@ exec_cc(char **argv)
 		return log_err(-errno, "Cant fork", CURPOS);
 	} else if(pid == 0) /* child */
 	{
-		for(int i = 0; argv[i] != NULL; ++i)
-			printf("%s ", argv[i]);
-		printf("\n");
+		/* TODO
+		 * Move output to a logfile
+		 */
+		// for(int i = 0; argv[i] != NULL; ++i)
+		// 	printf("%s ", argv[i]);
+		// printf("\n");
 
 		execvp(argv[0], argv);
 
 		/* if exec returns, then it failed */
-		return log_err(-errno, argv[0], CURPOS);
+		log_err(-errno, argv[0], CURPOS);
+		report_err(); /* report now or never */
+		exit(errno); /* Children shall never return */
 	} else /* parent */
 	{
 		return 0;
