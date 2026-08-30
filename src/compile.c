@@ -21,6 +21,7 @@
 
 #include "util.h"
 #include "misc.h"
+#include "err.h"
 
 #include "compile.h"
 
@@ -36,15 +37,15 @@ inline static int
 lines(FILE *file)
 {
 	if(!file)
-		return -1;
+		return -errno;
 
 	const int fd = fileno(file);
 	if(fd < 0)
-		return -1;
+		return -errno;
 
 	struct statfs st;
 	if(fstatfs(fd, &st) < 0)
-		return -1;
+		return -errno;
 
 	unsigned int lines = 0;
 	char buf[st.f_bsize];
@@ -63,13 +64,13 @@ inline static int
 make_argv(char ***ret, const struct data_t *data, int *argc)
 {
 	if(!argc)
-		return -1;
+		return log_err(NULL_POINTER, __FUNCTION__, CURPOS);
 
 	if(!data->flagFile)
 	{
 		*ret = malloc(sizeof(char*) * 4); /* cc, objFlag, source file, and NULL */
 		if(!*ret)
-			return -1;
+			return log_err(MALLOC, "argv allocation", CURPOS);
 
 		(*ret)[0] = data->cc;
 		(*ret)[1] = data->objFlag;
@@ -82,13 +83,13 @@ make_argv(char ***ret, const struct data_t *data, int *argc)
 
 	*argc = lines(data->flagFile);
 	if(*argc < 0)
-		return -1;
+		return log_err(MALLOC, "Flagfile line count", CURPOS);
 
 	*argc += 4;
 
 	*ret = malloc(sizeof(char*) * *argc);
 	if(!*ret)
-		return -1;
+		return log_err(MALLOC, "argv allocation", CURPOS);
 
 	(*ret)[0] = data->cc;
 	(*ret)[1] = data->objFlag;
@@ -96,7 +97,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc)
 
 	char *line = malloc(VALUE_SIZE);
 	if(!line)
-		return -1;
+		return log_err(MALLOC, "Flagfile line buffer", CURPOS);
 
 	for(int i = 2; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
 	{
@@ -109,7 +110,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc)
 			for(int j = 0; j < i; ++j)
 				free((*ret)[j]);
 			free(*ret);
-			return -1;
+			return log_err(MALLOC, "Flagfile line buffer", CURPOS);
 		}
 	}
 
@@ -162,8 +163,7 @@ exec_cc(char **argv)
 	pid_t pid = fork();
 	if(pid < 0)
 	{
-		print_err(LOG_ERR, "Failed to fork: %s \n", STRERROR);
-		return -1;
+		return log_err(-errno, "Cant fork", CURPOS);
 	} else if(pid == 0) /* child */
 	{
 		for(int i = 0; argv[i] != NULL; ++i)
@@ -173,8 +173,7 @@ exec_cc(char **argv)
 		execvp(argv[0], argv);
 
 		/* if exec returns, then it failed */
-		print_err(LOG_ERR, "%s: %s \n", argv[0], STRERROR);
-		return -1;
+		return log_err(-errno, argv[0], CURPOS);
 	} else /* parent */
 	{
 		return 0;
@@ -182,33 +181,28 @@ exec_cc(char **argv)
 }
 
 static inline int
-loop_srcdir(const char *srcdir, const struct data_t *data, char **argv, const int argc)
+loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc)
 {
-	DIR *dir = opendir(data->srcdirs);
+	DIR *dir = opendir(srcdir);
 	if(!dir)
-	{
-		print_err(LOG_ERR, "Cant open \"%s\": %s \n", srcdir, STRERROR);
-		return -1;
-	}
+		return log_err(CANT_OPEN, srcdir, CURPOS);
 
 	/* loop through srcdir */
 	for(struct dirent *dirEntry = readdir(dir); dirEntry; dirEntry = readdir(dir))
 	{
-		if(!strends(dirEntry->d_name, data->ext))
+		if(!strends(dirEntry->d_name, ext))
 			continue;
 
 		char *filePath = malloc(VALUE_SIZE);
 		if(!filePath)
-		{
-			print_err(LOG_ERR, "Cant allocate: %s \n", STRERROR);
-			return -1;
-		}
+			log_err(MALLOC, "File path for source file", CURPOS);
+
 		snprintf(filePath, VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
 
 		struct stat st;
 		if(stat(filePath, &st) < 0)
 		{
-			print_err(LOG_ERR, "%s: %s \n", filePath, STRERROR);
+			log_err(CANT_OPEN, "Stat struct", CURPOS);
 			continue;
 		}
 
@@ -230,9 +224,6 @@ loop_srcdir(const char *srcdir, const struct data_t *data, char **argv, const in
 int
 compile(const struct data_t *data)
 {
-	if(!data)
-		return -1;
-
 	/* by default they are NULL, as set in main.c */
 	if(!data->builddir ||
 		!data->srcdirs ||
@@ -240,34 +231,24 @@ compile(const struct data_t *data)
 		!data->objFlag ||
 		!data->cc)
 	{
-		print_err(LOG_ERR, "One or more config keys are not set in the template \n");
-		return -1;
+		return log_err(BAD_CONFIG, "One or more options are not set", CURPOS);
 	}
 
 	FILE *timestampsFile = fopen(CHANGEFILE_FILENAME, "a+");
 	if(!timestampsFile)
-	{
-		print_err(LOG_ERR, "Cant open %s: %s \n", CHANGEFILE_FILENAME, STRERROR);
-		return -1;
-	}
+		return log_err(CANT_OPEN, CHANGEFILE_FILENAME, CURPOS);
 	
 	/* sem_init(3)§ERRORS
 	 * How can this even fail?
 	 * Note: by data->threads being too large
 	 */
 	if(sem_init(&sem, 0, data->threads) < 0)
-	{
-		print_err(LOG_ERR, "Cant open semaphore: %s \n", STRERROR);
-		return -1;
-	}
+		return log_err(CANT_OPEN, "Semaphore", CURPOS);
 
 	int argc;
 	char **argv;
 	if(make_argv(&argv, data, &argc) < 0)
-	{
-		print_err(LOG_ERR, "Failure making argument vector: %s \n", STRERROR);
-		return -1;
-	}
+		return get_err();
 
 	const struct sigaction sig = { .sa_handler = sigchild_handler };
 	sigaction(SIGCHLD, &sig, NULL);
@@ -275,11 +256,8 @@ compile(const struct data_t *data)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
 	{
-		if(loop_srcdir(srcdir, data, argv, argc) < 0)
-		{
-			print_err(LOG_ERR, "Stopping compiling step due to a previous error \n");
-			return -1;
-		}
+		if(loop_srcdir(srcdir, data->ext, argv, argc) < 0)
+			return get_err();
 	}
 
 	for(int i = 0; i < argc; ++i)

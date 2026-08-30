@@ -7,6 +7,7 @@
 
 #include "util.h"
 #include "misc.h"
+#include "err.h"
 
 struct configPair_t
 {
@@ -29,10 +30,7 @@ parse_template(struct data_t *data, const char *templatePath)
 {
 	const FILE *template = fopen(templatePath, "r");
 	if(!template)
-	{
-		print_err(LOG_ERR, "Cant open \"%s\": %s \n", templatePath, STRERROR);
-		return -1;
-	}
+		return log_err(CANT_OPEN, templatePath, CURPOS);
 
 	struct configPair_t configPairs[] =
 	{
@@ -57,7 +55,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		char *value = strchr(line, ' ');
 		if(!value || *(++value) == '\0')
 		{
-			print_err(LOG_WARN, "\"%s\" has no value assigned to it \n", line);
+			log_err(BAD_CONFIG, line, CURPOS);
 			continue;
 		}
 
@@ -68,10 +66,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		{
 			data->flagFile = fopen(value, "r");
 			if(!data->flagFile)
-			{
-				print_err(LOG_ERR, "Cant open flagfile \"%s\": %s \n", value, STRERROR);
-				return -1;
-			}
+				return log_err(CANT_OPEN, value, CURPOS);
 
 		} else
 		{
@@ -87,17 +82,4 @@ parse_template(struct data_t *data, const char *templatePath)
 	}
 
 	return 0;
-}
-
-void
-print_err(const enum logLevel_e logLevel, const char *fmt, ...)
-{
-	va_list vl;
-	va_start(vl, fmt);
-
-	const char *logLevels[] = { "ERR", "WARN", "DEBUG" };
-	fprintf(stderr, "%s: ", logLevels[logLevel]);
-	vfprintf(stderr, fmt, vl);
-
-	va_end(vl);
 }

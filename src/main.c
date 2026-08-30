@@ -5,6 +5,7 @@
 
 #include "compile.h"
 #include "misc.h"
+#include "err.h"
 
 /* bro meson is so much better wtf */
 
@@ -43,10 +44,20 @@ main(int argc, char **argv)
 	}
 
 	if(parse_template(&data, templatePath) < 0)
-		return -1;
+		return report_err();
+
+	if(get_err())
+		report_err();
 
 	// printf("%s %s %s %s %s %i\n", data.srcdirs, data.incdirs, data.builddir, data.ext, data.cc, data.threads);
-	compile(&data);
+	if(compile(&data) < 0)
+		return report_err();
+
+	/* We gotta do something about this
+	 * Maybe an fatal flag?
+	 */
+	if(get_err())
+		report_err();
 
 	return 0;
 }
