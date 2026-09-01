@@ -54,7 +54,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		char *value = strchr(line, ' ');
 		if(!value || *(++value) == '\0')
 		{
-			log_err(BAD_CONFIG, line, CURPOS);
+			log_err(BAD_FORMAT, line, CURPOS);
 			continue;
 		}
 

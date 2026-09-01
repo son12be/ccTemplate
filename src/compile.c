@@ -28,7 +28,7 @@
 static sem_t sem;
 
 void
-sigchild_handler(int sig)
+sigchld_handler(int)
 {
 	sem_post(&sem);
 }
@@ -37,15 +37,15 @@ inline static int
 lines(FILE *file)
 {
 	if(!file)
-		return -errno;
+		return errno;
 
 	const int fd = fileno(file);
 	if(fd < 0)
-		return -errno;
+		return errno;
 
 	struct statfs st;
 	if(fstatfs(fd, &st) < 0)
-		return -errno;
+		return errno;
 
 	unsigned int lines = 0;
 	char buf[st.f_bsize];
@@ -75,7 +75,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	{
 		*argc += lines(data->flagFile);
 		if(*argc < 0)
-			return log_err(-errno, "Flagfile line count", CURPOS);
+			return log_err(errno, "Flagfile line count", CURPOS);
 	}
 
 	*first_opt = *argc + 1;
@@ -119,37 +119,44 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
  * oldTime to check blah blah blah
  */
 inline static int
-has_changed(FILE *file, const char *fileName, const time_t currentTime)
+has_changed(FILE *file, const char *filePath, const time_t currentTime)
 {
+	rewind(file);
+
 	char line[VALUE_SIZE];
-	time_t oldTime;
-	while(fgets(line, sizeof(line), file)) /* lookup fileName */
+	while(fgets(line, sizeof(line), file) != NULL) /* lookup fileName */
 	{
-		if(!strstr(line, fileName))
+		line[strcspn(line, "\n")] = '\0';
+		const char *curPath = strchr(line, ' ');
+		if(!curPath)
 			continue;
 
-		sscanf(line, "%s %lu", line, &oldTime);
+		curPath++;
+		if(!streq(curPath, filePath))
+			continue;
+
+		time_t oldTime;
+		sscanf(line, "%lu", &oldTime);
 
 		if(oldTime >= currentTime)
 			return 0;
 
-		/* XXX may be wrong */
-		fseek(file, strlen(line) + 1, SEEK_CUR);
-		fprintf(file, "%s %lu\n", fileName, currentTime);
+		fseek(file, -strlen(line) - 1, SEEK_CUR);
+		fprintf(file, "%lu", currentTime);
 
 		return 1;
 	}
 
 	/* add file if not found */
 	fseek(file, 0, SEEK_END);
-	fprintf(file, "%s %lu\n", fileName, currentTime);
+	fprintf(file, "%lu %s\n", currentTime, filePath);
 
 	return 1;
 }
 
 /*
- * We need a wrapper since exec* functions require more than
- * the void* argument pthread_create() provides
+ * Decrement sem and "fork and exec"
+ * sigchld will handle incrementing sem
  */
 inline static int
 exec_cc(char **argv)
@@ -160,7 +167,7 @@ exec_cc(char **argv)
 	pid_t pid = fork();
 	if(pid < 0)
 	{
-		return log_err(-errno, "Cant fork", CURPOS);
+		return log_err(errno, "Cant fork", CURPOS);
 	} else if(pid == 0) /* child */
 	{
 		/* TODO
@@ -173,7 +180,7 @@ exec_cc(char **argv)
 		execvp(argv[0], argv);
 
 		/* if exec returns, then it failed */
-		log_err(-errno, argv[0], CURPOS);
+		log_err(errno, argv[0], CURPOS);
 		report_err(); /* report now or never */
 		exit(errno); /* Children shall never return */
 	} else /* parent */
@@ -183,7 +190,7 @@ exec_cc(char **argv)
 }
 
 static inline int
-loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc)
+loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc, const FILE *timestampsFile)
 {
 	DIR *dir = opendir(srcdir);
 	if(!dir)
@@ -197,19 +204,16 @@ loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc)
 
 		char *filePath = malloc(VALUE_SIZE);
 		if(!filePath)
-			log_err(MALLOC, "File path for source file", CURPOS);
+			return log_err(MALLOC, "File path for source file", CURPOS);
 
 		snprintf(filePath, VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
 
 		struct stat st;
 		if(stat(filePath, &st) < 0)
-		{
-			log_err(CANT_OPEN, "Stat struct", CURPOS);
-			continue;
-		}
+			return log_err(CANT_OPEN, "Stat struct", CURPOS);
 
-		// if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
-		// 	continue;
+		if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
+			continue;
 
 		/* Note for self: size - 1 is NULL. vector[size] */
 		/* is not guaranteed to be NULL */
@@ -232,10 +236,10 @@ compile(const struct data_t *data)
 		!data->ext ||
 		!data->cc)
 	{
-		return log_err(BAD_CONFIG, "One or more options are not set", CURPOS);
+		return log_err(BAD_FORMAT, "One or more options are not set", CURPOS);
 	}
 
-	FILE *timestampsFile = fopen(CHANGEFILE_FILENAME, "a+");
+	FILE *timestampsFile = fopen(CHANGEFILE_FILENAME, "r+");
 	if(!timestampsFile)
 		return log_err(CANT_OPEN, CHANGEFILE_FILENAME, CURPOS);
 	
@@ -250,17 +254,19 @@ compile(const struct data_t *data)
 	int opt_i;
 	char **argv;
 	if(make_argv(&argv, data, &argc, &opt_i) < 0)
-		return get_err();
+		return -1;
 
-	const struct sigaction sig = { .sa_handler = sigchild_handler };
+	const struct sigaction sig = { .sa_handler = sigchld_handler };
 	sigaction(SIGCHLD, &sig, NULL);
 
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
 	{
-		if(loop_srcdir(srcdir, data->ext, argv, argc) < 0)
-			return get_err();
+		if(loop_srcdir(srcdir, data->ext, argv, argc, timestampsFile) < 0)
+			return -1;
 	}
+
+	fclose(timestampsFile);
 
 	free(argv[0]);
 	for(; opt_i < argc; ++opt_i)

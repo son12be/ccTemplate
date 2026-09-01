@@ -11,14 +11,14 @@
 typedef enum
 {
 	OK = 0,
-	BAD_CONFIG,
+	BAD_FORMAT,
 	NULL_POINTER,
 	CANT_OPEN,
 	MALLOC,
 } error_e;
 
 int
-log_err(error_e code, char *context, char *location);
+log_err(const error_e code, const char *context, const char *location);
 
 int
 report_err();
