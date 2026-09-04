@@ -6,6 +6,7 @@
  */
 
 
+#include <libgen.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
@@ -24,6 +25,11 @@
 #include "err.h"
 
 #include "compile.h"
+
+#define ARGV_NULL_I argc - 1
+#define ARGV_OUTPATH_I argc - 2
+#define ARGV_OFLAG_I argc - 3
+#define ARGV_PATH_I argc - 4
 
 static sem_t sem;
 
@@ -66,7 +72,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	if(!argc || !first_opt)
 		return log_err(NULL_POINTER, __FUNCTION__, CURPOS);
 
-	*argc = 3; /* at least for cc; filepath and NULL */
+	*argc = 5; /* at least for cc; filepath, -o; path, and NULL */
 
 	/* get argc */
 	for(int i = 0; (data->cc)[i] != '\0'; ++i)
@@ -85,15 +91,18 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	if(!*ret)
 		return log_err(MALLOC, "argv allocation", CURPOS);
 
-	/* then fill it up */
+	/* get args from data->cc */
 	int i = 0;
 	for(char *token = strtok(data->cc, " "); token; token = strtok(NULL, " "), ++i)
 		(*ret)[i] = token;
 
+	if(!data->flagFile)
+		goto end;
+
+	/* get args from flagFile */
 	char *line = malloc(VALUE_SIZE);
 	if(!line)
 		return log_err(MALLOC, "Flagfile line buffer", CURPOS);
-
 	for(; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
 	{
 		line[strcspn(line, "\n")] = '\0';
@@ -109,8 +118,10 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 		}
 	}
 
-	(*ret)[*argc - 1] = NULL;
-
+end:
+	(*ret)[*ARGV_OFLAG_I] = "-o";
+	(*ret)[*ARGV_OUTPATH_I] = NULL; // must be NULL; for realloc() in loop_srcdir
+	(*ret)[*ARGV_NULL_I] = NULL;
 	return 0;
 }
 
@@ -136,20 +147,20 @@ has_changed(FILE *file, const char *filePath, const time_t currentTime)
 			continue;
 
 		time_t oldTime;
-		sscanf(line, "%lu", &oldTime);
+		sscanf(line, "%010lu", &oldTime);
 
 		if(oldTime >= currentTime)
 			return 0;
 
 		fseek(file, -strlen(line) - 1, SEEK_CUR);
-		fprintf(file, "%lu", currentTime);
+		fprintf(file, "%010lu", currentTime);
 
 		return 1;
 	}
 
 	/* add file if not found */
 	fseek(file, 0, SEEK_END);
-	fprintf(file, "%lu %s\n", currentTime, filePath);
+	fprintf(file, "%010lu %s\n", currentTime, filePath);
 
 	return 1;
 }
@@ -190,7 +201,7 @@ exec_cc(char **argv)
 }
 
 static inline int
-loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc, const FILE *timestampsFile)
+loop_srcdir(const char *srcdir, const char *builddir, const char *ext, char **argv, const int argc, const FILE *timestampsFile)
 {
 	DIR *dir = opendir(srcdir);
 	if(!dir)
@@ -211,15 +222,29 @@ loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc, co
 		struct stat st;
 		if(stat(filePath, &st) < 0)
 			return log_err(CANT_OPEN, "Stat struct", CURPOS);
-
 		if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
+		{
+			free(argv[ARGV_PATH_I]);
 			continue;
+		}
 
-		/* Note for self: size - 1 is NULL. vector[size] */
-		/* is not guaranteed to be NULL */
-		argv[argc - 2] = filePath;
+		free(argv[ARGV_PATH_I]);
+		argv[ARGV_PATH_I] = filePath;
 
-		exec_cc(argv);
+		free(argv[ARGV_OUTPATH_I]);
+		char *filePathBasename = basename(filePath);
+		int outpath_len = strlen(builddir) + strlen(filePathBasename) + 4;
+		argv[ARGV_OUTPATH_I] = realloc(argv[ARGV_OUTPATH_I], outpath_len);
+		if(!argv[ARGV_OUTPATH_I])
+			return log_err(MALLOC, "argv output path", CURPOS);
+
+		snprintf(argv[ARGV_OUTPATH_I], outpath_len, "%s/%s.o", builddir, filePathBasename);
+
+		if(exec_cc(argv) < 0)
+		{
+			free(argv[ARGV_PATH_I]);
+			return -1;
+		}
 	}
 
 	closedir(dir);
@@ -239,7 +264,14 @@ compile(const struct data_t *data)
 		return log_err(BAD_FORMAT, "One or more options are not set", CURPOS);
 	}
 
-	FILE *timestampsFile = fopen(CHANGEFILE_FILENAME, "r+");
+	FILE *timestampsFile;
+	if(access(CHANGEFILE_FILENAME, R_OK) < 0)
+	{
+		timestampsFile = fopen(CHANGEFILE_FILENAME, "w+");
+	} else
+	{
+		timestampsFile = fopen(CHANGEFILE_FILENAME, "r+");
+	}
 	if(!timestampsFile)
 		return log_err(CANT_OPEN, CHANGEFILE_FILENAME, CURPOS);
 	
@@ -262,7 +294,7 @@ compile(const struct data_t *data)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
 	{
-		if(loop_srcdir(srcdir, data->ext, argv, argc, timestampsFile) < 0)
+		if(loop_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile) < 0)
 			return -1;
 	}
 

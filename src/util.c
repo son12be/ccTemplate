@@ -1,5 +1,4 @@
 #include <string.h>
-#include <errno.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -34,7 +33,7 @@ parse_template(struct data_t *data, const char *templatePath)
 
 	struct configPair_t configPairs[] =
 	{
-		{ "SRCDIR", &(data->srcdirs) },
+		{ "SRCDIR", &data->srcdirs },
 		{ "BUILDDIR", &data->builddir },
 		{ "EXT", &data->ext },
 		{ "CC", &data->cc },
