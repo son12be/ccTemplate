@@ -100,7 +100,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 		goto end;
 
 	/* get args from flagFile */
-	char *line = malloc(VALUE_SIZE);
+	char *line = malloc(VALUE_SIZE / 2);
 	if(!line)
 		return log_err(MALLOC, "Flagfile line buffer", CURPOS);
 	for(; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
@@ -119,8 +119,11 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	}
 
 end:
+	static char outpath[VALUE_SIZE / 2];
+	snprintf(outpath, sizeof(outpath), "%s/", data->builddir);
+	(*ret)[*ARGV_OUTPATH_I] = outpath;
+
 	(*ret)[*ARGV_OFLAG_I] = "-o";
-	(*ret)[*ARGV_OUTPATH_I] = NULL; // must be NULL; for realloc() in loop_srcdir
 	(*ret)[*ARGV_NULL_I] = NULL;
 	return 0;
 }
@@ -208,6 +211,7 @@ loop_srcdir(const char *srcdir, const char *builddir, const char *ext, char **ar
 		return log_err(CANT_OPEN, srcdir, CURPOS);
 
 	/* loop through srcdir */
+	int fileCount = 0;
 	for(struct dirent *dirEntry = readdir(dir); dirEntry; dirEntry = readdir(dir))
 	{
 		if(!strends(dirEntry->d_name, ext))
@@ -223,22 +227,14 @@ loop_srcdir(const char *srcdir, const char *builddir, const char *ext, char **ar
 		if(stat(filePath, &st) < 0)
 			return log_err(CANT_OPEN, "Stat struct", CURPOS);
 		if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
-		{
-			free(argv[ARGV_PATH_I]);
 			continue;
-		}
 
-		free(argv[ARGV_PATH_I]);
+		if(fileCount > 0)
+			free(argv[ARGV_PATH_I]);
 		argv[ARGV_PATH_I] = filePath;
 
-		free(argv[ARGV_OUTPATH_I]);
-		char *filePathBasename = basename(filePath);
-		int outpath_len = strlen(builddir) + strlen(filePathBasename) + 4;
-		argv[ARGV_OUTPATH_I] = realloc(argv[ARGV_OUTPATH_I], outpath_len);
-		if(!argv[ARGV_OUTPATH_I])
-			return log_err(MALLOC, "argv output path", CURPOS);
-
-		snprintf(argv[ARGV_OUTPATH_I], outpath_len, "%s/%s.o", builddir, filePathBasename);
+		snprintf(strrchr(argv[ARGV_OUTPATH_I], '/') + 1, VALUE_SIZE / 2, "%i.o", fileCount);
+		fileCount++;
 
 		if(exec_cc(argv) < 0)
 		{
@@ -255,15 +251,6 @@ loop_srcdir(const char *srcdir, const char *builddir, const char *ext, char **ar
 int
 compile(const struct data_t *data)
 {
-	/* by default they are NULL, as set in main.c */
-	if(!data->builddir ||
-		!data->srcdirs ||
-		!data->ext ||
-		!data->cc)
-	{
-		return log_err(BAD_FORMAT, "One or more options are not set", CURPOS);
-	}
-
 	FILE *timestampsFile;
 	if(access(CHANGEFILE_FILENAME, R_OK) < 0)
 	{
@@ -283,9 +270,9 @@ compile(const struct data_t *data)
 		return log_err(CANT_OPEN, "Semaphore", CURPOS);
 
 	int argc;
-	int opt_i;
+	int i_firstOpt;
 	char **argv;
-	if(make_argv(&argv, data, &argc, &opt_i) < 0)
+	if(make_argv(&argv, data, &argc, &i_firstOpt) < 0)
 		return -1;
 
 	const struct sigaction sig = { .sa_handler = sigchld_handler };
@@ -300,9 +287,8 @@ compile(const struct data_t *data)
 
 	fclose(timestampsFile);
 
-	free(argv[0]);
-	for(; opt_i < argc; ++opt_i)
-		free(argv[opt_i]);
+	for(; i_firstOpt < ARGV_OFLAG_I; ++i_firstOpt)
+		free(argv[i_firstOpt]);
 
 	free(argv);
 

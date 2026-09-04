@@ -3,7 +3,8 @@
 #define TEMPLATE_FILENAME "TEMPLATE"
 #define CHANGEFILE_FILENAME "timestamps"
 
-/* standard line size */
-#define VALUE_SIZE 512
-#define SMALL_VALUE_SIZE 32
+#define LARGE_ENOUGH_LINE 1024
+
+#define VALUE_SIZE 256
+#define SMALL_VALUE_SIZE 64
 #define SMALLER_VALUE_SIZE 8

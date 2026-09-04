@@ -1,8 +1,9 @@
 #include <string.h>
+#include <sys/param.h>
 #include <ctype.h>
-#include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include "util.h"
 #include "misc.h"
@@ -12,6 +13,7 @@ struct configPair_t
 {
 	const char *key;
 	void *value;
+	uint16_t maxSz;
 };
 
 int
@@ -21,7 +23,7 @@ strends(const char *A, const char *B)
 		return 0;
 
 	char *c = strrchr(A, B[0]);
-	return c && strcmp(c, B) == 0 ? 1 : 0;
+	return c && (strcmp(c, B) == 0) ? 1 : 0;
 }
 
 int
@@ -33,10 +35,10 @@ parse_template(struct data_t *data, const char *templatePath)
 
 	struct configPair_t configPairs[] =
 	{
-		{ "SRCDIR", &data->srcdirs },
-		{ "BUILDDIR", &data->builddir },
-		{ "EXT", &data->ext },
-		{ "CC", &data->cc },
+		{ "SRCDIR", data->srcdirs, sizeof(data->srcdirs) },
+		{ "BUILDDIR", data->builddir, sizeof(data->builddir) },
+		{ "EXT", data->ext, sizeof(data->ext) },
+		{ "CC", data->cc, sizeof(data->cc) },
 	};
 
 	char line[VALUE_SIZE];
@@ -52,10 +54,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		/* find the whitespace between key and value */
 		char *value = strchr(line, ' ');
 		if(!value || *(++value) == '\0')
-		{
-			log_err(BAD_FORMAT, line, CURPOS);
-			continue;
-		}
+			return log_err(BAD_FORMAT, line, CURPOS);
 
 		*(value - 1) = '\0';
 
@@ -73,11 +72,16 @@ parse_template(struct data_t *data, const char *templatePath)
 				if(!streq(line, configPairs[i].key))
 					continue;
 
-				*((char**)configPairs[i].value) = malloc(strlen(value) + 1);
-				memcpy(*((char**)configPairs[i].value), value, strlen(value) + 1);
+				/* This line makes me want to use C++ */
+				snprintf(configPairs[i].value, configPairs[i].maxSz, "%s", value);
 			}
 		}
 	}
+	
+	fclose(template);
+
+	if(!(data->srcdirs[0] & data->builddir[0] & data->cc[0] & data->ext[0]))
+		return log_err(BAD_FORMAT, "One or more required options are not set", CURPOS);
 
 	return 0;
 }

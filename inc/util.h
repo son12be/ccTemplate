@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 
+#include "misc.h"
+
 #define streq(A, B) (strcmp(A, B) == 0)
 
 enum logLevel_e
@@ -13,10 +15,10 @@ enum logLevel_e
 
 struct data_t
 {
-	char *srcdirs;
-	char *builddir;
-	char *ext;
-	char *cc;
+	char srcdirs[VALUE_SIZE];
+	char builddir[SMALL_VALUE_SIZE];
+	char ext[SMALLER_VALUE_SIZE];
+	char cc[VALUE_SIZE];
 	unsigned int threads;
 	FILE *flagFile;
 };

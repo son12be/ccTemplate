@@ -15,10 +15,10 @@ main(int argc, char **argv)
 	char templatePath[128] = TEMPLATE_FILENAME;
 	struct data_t data = 
 	{
-		.srcdirs = NULL,
-		.builddir = NULL,
-		.ext = NULL,
-		.cc = NULL,
+		.srcdirs = { 0 },
+		.builddir = { 0 },
+		.ext = { 0 },
+		.cc = { 0 },
 		.threads = 1,
 		.flagFile = NULL,
 	};
@@ -44,9 +44,6 @@ main(int argc, char **argv)
 
 	if(parse_template(&data, templatePath) < 0)
 		return report_err();
-
-	if(get_err())
-		report_err();
 
 	// printf("%s %s %s %s %s %i\n", data.srcdirs, data.incdirs, data.builddir, data.ext, data.cc, data.threads);
 	if(compile(&data) < 0)
