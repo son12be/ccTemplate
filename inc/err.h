@@ -18,7 +18,7 @@ typedef enum
 } error_e;
 
 int
-log_err(const error_e code, const char *context, const char *location);
+log_err(const error_e code, const char *location, const char *fmt, ...);
 
 int
 report_err();

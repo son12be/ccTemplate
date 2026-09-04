@@ -69,9 +69,6 @@ lines(FILE *file)
 inline static int
 make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 {
-	if(!argc || !first_opt)
-		return log_err(NULL_POINTER, __FUNCTION__, CURPOS);
-
 	*argc = 5; /* at least for cc; filepath, -o; path, and NULL */
 
 	/* get argc */
@@ -81,7 +78,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	{
 		*argc += lines(data->flagFile);
 		if(*argc < 0)
-			return log_err(errno, "Flagfile line count", CURPOS);
+			return log_err(-errno, CURPOS, "Failure counting flagfile lines");
 	}
 
 	*first_opt = *argc + 1;
@@ -89,7 +86,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	/* allocate */
 	*ret = malloc(sizeof(char*) * *argc);
 	if(!*ret)
-		return log_err(MALLOC, "argv allocation", CURPOS);
+		return log_err(MALLOC, CURPOS, "Cant allocate argv");
 
 	/* get args from data->cc */
 	int i = 0;
@@ -102,7 +99,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	/* get args from flagFile */
 	char *line = malloc(VALUE_SIZE / 2);
 	if(!line)
-		return log_err(MALLOC, "Flagfile line buffer", CURPOS);
+		return log_err(MALLOC, CURPOS, "Cant allocate line buffer");
 	for(; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
 	{
 		line[strcspn(line, "\n")] = '\0';
@@ -114,7 +111,7 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 			for(int j = 0; j < i; ++j)
 				free((*ret)[j]);
 			free(*ret);
-			return log_err(MALLOC, "Flagfile line buffer", CURPOS);
+			return log_err(MALLOC, CURPOS, "Cant allocate line buffer");
 		}
 	}
 
@@ -181,7 +178,7 @@ exec_cc(char **argv)
 	pid_t pid = fork();
 	if(pid < 0)
 	{
-		return log_err(errno, "Cant fork", CURPOS);
+		return log_err(-errno, CURPOS, "Cant fork");
 	} else if(pid == 0) /* child */
 	{
 		/* TODO
@@ -194,7 +191,7 @@ exec_cc(char **argv)
 		execvp(argv[0], argv);
 
 		/* if exec returns, then it failed */
-		log_err(errno, argv[0], CURPOS);
+		log_err(-errno, CURPOS, "Cant execute \"%s\"", argv[0]);
 		report_err(); /* report now or never */
 		exit(errno); /* Children shall never return */
 	} else /* parent */
@@ -204,11 +201,11 @@ exec_cc(char **argv)
 }
 
 static inline int
-loop_srcdir(const char *srcdir, const char *builddir, const char *ext, char **argv, const int argc, const FILE *timestampsFile)
+loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc, const FILE *timestampsFile)
 {
 	DIR *dir = opendir(srcdir);
 	if(!dir)
-		return log_err(CANT_OPEN, srcdir, CURPOS);
+		return log_err(CANT_OPEN, CURPOS, "Source dir \"%s\"", srcdir);
 
 	/* loop through srcdir */
 	int fileCount = 0;
@@ -217,15 +214,16 @@ loop_srcdir(const char *srcdir, const char *builddir, const char *ext, char **ar
 		if(!strends(dirEntry->d_name, ext))
 			continue;
 
+		fileCount++;
 		char *filePath = malloc(VALUE_SIZE);
 		if(!filePath)
-			return log_err(MALLOC, "File path for source file", CURPOS);
+			return log_err(MALLOC, CURPOS, "Cant allocate path buffer");
 
 		snprintf(filePath, VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
 
 		struct stat st;
 		if(stat(filePath, &st) < 0)
-			return log_err(CANT_OPEN, "Stat struct", CURPOS);
+			return log_err(CANT_OPEN, CURPOS, "Cant allocate stat buffer");
 		if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
 			continue;
 
@@ -234,7 +232,6 @@ loop_srcdir(const char *srcdir, const char *builddir, const char *ext, char **ar
 		argv[ARGV_PATH_I] = filePath;
 
 		snprintf(strrchr(argv[ARGV_OUTPATH_I], '/') + 1, VALUE_SIZE / 2, "%i.o", fileCount);
-		fileCount++;
 
 		if(exec_cc(argv) < 0)
 		{
@@ -260,14 +257,14 @@ compile(const struct data_t *data)
 		timestampsFile = fopen(CHANGEFILE_FILENAME, "r+");
 	}
 	if(!timestampsFile)
-		return log_err(CANT_OPEN, CHANGEFILE_FILENAME, CURPOS);
+		return log_err(CANT_OPEN, CURPOS, CHANGEFILE_FILENAME);
 	
 	/* sem_init(3)§ERRORS
 	 * How can this even fail?
 	 * Note: by data->threads being too large
 	 */
 	if(sem_init(&sem, 0, data->threads) < 0)
-		return log_err(CANT_OPEN, "Semaphore", CURPOS);
+		return log_err(CANT_OPEN, CURPOS, "Cant open semaphore");
 
 	int argc;
 	int i_firstOpt;
@@ -281,7 +278,7 @@ compile(const struct data_t *data)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
 	{
-		if(loop_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile) < 0)
+		if(loop_srcdir(srcdir, data->ext, argv, argc, timestampsFile) < 0)
 			return -1;
 	}
 
