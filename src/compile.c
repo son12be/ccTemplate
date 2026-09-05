@@ -117,6 +117,9 @@ make_argv(char ***ret, const struct data_t * const data, int * const argc, int *
 		}
 	}
 
+	free(line);
+
+
 end:
 	int maxLenSz = strlen(data->builddir) + NAME_MAX + 2;
 	(*ret)[*ARGV_OUTPATH_I] = malloc(maxLenSz);
@@ -139,7 +142,6 @@ end:
 static void
 destroy_argv(char ***argv, int argc, int first_opt)
 {
-	free((*argv)[0]);
 	for(; first_opt < ARGV_OFLAG_I; ++first_opt)
 		free((*argv)[first_opt]);
 	free((*argv)[ARGV_OUTPATH_I]);
@@ -235,22 +237,20 @@ loop_srcdir(const char *const srcdir, const char *const builddir, const char *co
 		if(!strends(dirEntry->d_name, ext))
 			continue;
 
-		char *filePath = malloc(VALUE_SIZE);
-		if(!filePath)
+		free(argv[ARGV_PATH_I]);
+		argv[ARGV_PATH_I] = malloc(VALUE_SIZE);
+		if(!argv[ARGV_PATH_I])
 			return log_err(MALLOC, CURPOS, "Cant allocate path buffer");
 
-		snprintf(filePath, VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
+		snprintf(argv[ARGV_PATH_I], VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
 
 		struct stat st;
-		if(stat(filePath, &st) < 0)
+		if(stat(argv[ARGV_PATH_I], &st) < 0)
 			return log_err(CANT_OPEN, CURPOS, "Cant allocate stat buffer");
-		if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
+		if(!has_changed(timestampsFile, argv[ARGV_PATH_I], st.st_mtim.tv_sec))
 			continue;
 
-		free(argv[ARGV_PATH_I]);
-		argv[ARGV_PATH_I] = filePath;
-
-		char *filename = basename(filePath);
+		char *filename = basename(argv[ARGV_PATH_I]);
 		snprintf(strrchr(argv[ARGV_OUTPATH_I], '/') + 1, NAME_MAX - strlen(builddir) - 1, "%s.o", filename);
 
 		if(exec_cc(argv) < 0)
@@ -293,7 +293,7 @@ compile(const struct data_t *data)
 	sigaction(SIGCHLD, &sig, NULL);
 
 	/* loop through specified srcdirs */
-	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
+	for(char *srcdir = strtok(data->srcdirs, " "); srcdir; srcdir = strtok(NULL, " "))
 	{
 		if(loop_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile) < 0)
 		{

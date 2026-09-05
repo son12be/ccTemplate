@@ -23,7 +23,7 @@ strends(const char *A, const char *B)
 		return 0;
 
 	char *c = strrchr(A, B[0]);
-	return c && (strcmp(c, B) == 0) ? 1 : 0;
+	return c && (strcmp(c, B) == 0);
 }
 
 static char *
@@ -84,7 +84,7 @@ parse_template(struct data_t *data, const char *templatePath)
 
 		} else
 		{
-			for(int i = 0; i < sizeof(configPairs) / sizeof(struct configPair_t); ++i)
+			for(unsigned int i = 0; i < sizeof(configPairs) / sizeof(struct configPair_t); ++i)
 			{
 				if(!streq(line, configPairs[i].key))
 					continue;

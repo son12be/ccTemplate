@@ -42,13 +42,13 @@ report_err()
 			fprintf(stderr, "A NULL pointer was passed");
 			break;
 		case CANT_OPEN:
-			fprintf(stderr, "Cant open (%s)", strerror(s_Code));
+			fprintf(stderr, "Cant open (%s)", strerror(errno));
 			break;
 		case MALLOC:
-			fprintf(stderr, "malloc() failed (%s)", strerror(s_Code));
+			fprintf(stderr, "malloc() failed (%s)", strerror(errno));
 			break;
 		default:
-			fprintf(stderr, "Assuming errno code: %s", strerror(-s_Code));
+			fprintf(stderr, "Assuming errno code: %s", strerror(errno));
 			break;
 	}
 	fprintf(stderr, ".\033[1;32m Hint: %s.\033[1;34m At %s \033[0m\n", s_Context, s_Location);
