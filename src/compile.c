@@ -70,7 +70,7 @@ lines(FILE *file)
 inline static int
 make_argv(char ***ret, const struct data_t * const data, int * const argc, int * const first_opt)
 {
-	*argc = 5; /* at least for cc; filepath, -o; path, and NULL */
+	*argc = 6; /* at least for cc, -c, filepath, -o; path, and NULL */
 
 	/* get argc */
 	for(char *s = data->cc; (s = strrchr(s, ' ')); s++, (*argc)++);
@@ -81,34 +81,36 @@ make_argv(char ***ret, const struct data_t * const data, int * const argc, int *
 			return log_err(-errno, CURPOS, "Failure counting flagfile lines");
 	}
 
-	*first_opt = *argc + 1;
-
 	/* allocate */
 	*ret = malloc(sizeof(char*) * *argc);
 	if(!*ret)
 		return log_err(MALLOC, CURPOS, "Cant allocate argv");
 
 	/* get args from data->cc */
-	int i = 0;
-	for(char *token = strtok(data->cc, " "); token; token = strtok(NULL, " "), ++i)
-		(*ret)[i] = token;
+	int i_arg = 0;
+	for(char *token = strtok(data->cc, " "); token; token = strtok(NULL, " "), ++i_arg)
+		(*ret)[i_arg] = token;
+
+	(*ret)[i_arg++] = "-c";
 
 	if(!data->flagFile)
 		goto end;
+
+	*first_opt = i_arg;
 
 	/* get args from flagFile */
 	char *line = malloc(VALUE_SIZE / 2);
 	if(!line)
 		return log_err(MALLOC, CURPOS, "Cant allocate line buffer");
-	for(; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i)
+	for(; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i_arg)
 	{
 		line[strcspn(line, "\n")] = '\0';
-		(*ret)[i] = line;
+		(*ret)[i_arg] = line;
 
 		line = malloc(VALUE_SIZE);
 		if(!line)
 		{
-			for(int j = 0; j < i; ++j)
+			for(int j = 0; j < i_arg; ++j)
 				free((*ret)[j]);
 			free(*ret);
 			return log_err(MALLOC, CURPOS, "Cant allocate line buffer");

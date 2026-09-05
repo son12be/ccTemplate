@@ -26,6 +26,23 @@ strends(const char *A, const char *B)
 	return c && (strcmp(c, B) == 0) ? 1 : 0;
 }
 
+static char *
+trim_ws(const char **s)
+{
+	while(isspace((unsigned char)**s))
+		(*s)++;
+
+	char *end = strchr(*s, '\0');
+	end--;
+	while(end > *s && isspace((unsigned char)*end))
+	{
+		*end = '\0';
+		end--;
+	}
+
+	return *s;
+}
+
 int
 parse_template(struct data_t *data, const char *templatePath)
 {
@@ -71,6 +88,8 @@ parse_template(struct data_t *data, const char *templatePath)
 			{
 				if(!streq(line, configPairs[i].key))
 					continue;
+
+				trim_ws(&value);
 
 				/* This line makes me want to use C++ */
 				snprintf(configPairs[i].value, configPairs[i].maxSz, "%s", value);
