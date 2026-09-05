@@ -31,7 +31,7 @@ parse_template(struct data_t *data, const char *templatePath)
 {
 	const FILE *template = fopen(templatePath, "r");
 	if(!template)
-		return log_err(CANT_OPEN, templatePath, CURPOS);
+		return log_err(CANT_OPEN, CURPOS, templatePath);
 
 	struct configPair_t configPairs[] =
 	{
@@ -54,7 +54,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		/* find the whitespace between key and value */
 		char *value = strchr(line, ' ');
 		if(!value || *(++value) == '\0')
-			return log_err(BAD_FORMAT, line, CURPOS);
+			return log_err(BAD_FORMAT, CURPOS, "Tempate file (%s). At line \"%s\"", templatePath, line);
 
 		*(value - 1) = '\0';
 
@@ -63,7 +63,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		{
 			data->flagFile = fopen(value, "r");
 			if(!data->flagFile)
-				return log_err(CANT_OPEN, value, CURPOS);
+				return log_err(CANT_OPEN, CURPOS,  value);
 
 		} else
 		{
@@ -81,7 +81,7 @@ parse_template(struct data_t *data, const char *templatePath)
 	fclose(template);
 
 	if(!(data->srcdirs[0] & data->builddir[0] & data->cc[0] & data->ext[0]))
-		return log_err(BAD_FORMAT, "One or more required options are not set", CURPOS);
+		return log_err(BAD_FORMAT, CURPOS, "One or more required options are not set");
 
 	return 0;
 }

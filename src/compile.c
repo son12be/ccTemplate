@@ -7,6 +7,7 @@
 
 
 #include <libgen.h>
+#include <limits.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
@@ -43,15 +44,15 @@ inline static int
 lines(FILE *file)
 {
 	if(!file)
-		return errno;
+		return -1;
 
 	const int fd = fileno(file);
 	if(fd < 0)
-		return errno;
+		return -1;
 
 	struct statfs st;
 	if(fstatfs(fd, &st) < 0)
-		return errno;
+		return -1;
 
 	unsigned int lines = 0;
 	char buf[st.f_bsize];
@@ -67,13 +68,12 @@ lines(FILE *file)
 }
 
 inline static int
-make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
+make_argv(char ***ret, const struct data_t * const data, int * const argc, int * const first_opt)
 {
 	*argc = 5; /* at least for cc; filepath, -o; path, and NULL */
 
 	/* get argc */
-	for(int i = 0; (data->cc)[i] != '\0'; ++i)
-		if((data->cc)[i] == ' ') (*argc)++;
+	for(char *s = data->cc; (s = strrchr(s, ' ')); s++, (*argc)++);
 	if(data->flagFile)
 	{
 		*argc += lines(data->flagFile);
@@ -116,13 +116,33 @@ make_argv(char ***ret, const struct data_t *data, int *argc, int *first_opt)
 	}
 
 end:
-	static char outpath[VALUE_SIZE / 2];
-	snprintf(outpath, sizeof(outpath), "%s/", data->builddir);
-	(*ret)[*ARGV_OUTPATH_I] = outpath;
+	int maxLenSz = strlen(data->builddir) + NAME_MAX + 2;
+	(*ret)[*ARGV_OUTPATH_I] = malloc(maxLenSz);
+	if(!*ret)
+	{
+		for(int i = *first_opt; i < *ARGV_OFLAG_I; ++i)
+			free((*ret)[i]);
+		free(*ret);
+		return log_err(MALLOC, CURPOS, "Outpath allocation");
+	}
+
+	snprintf((*ret)[*ARGV_OUTPATH_I], maxLenSz, "%s/", data->builddir);
 
 	(*ret)[*ARGV_OFLAG_I] = "-o";
+	(*ret)[*ARGV_PATH_I] = NULL;
 	(*ret)[*ARGV_NULL_I] = NULL;
 	return 0;
+}
+
+static void
+destroy_argv(char ***argv, int argc, int first_opt)
+{
+	free((*argv)[0]);
+	for(; first_opt < ARGV_OFLAG_I; ++first_opt)
+		free((*argv)[first_opt]);
+	free((*argv)[ARGV_OUTPATH_I]);
+	free(*argv);
+	*argv = NULL;
 }
 
 /*
@@ -201,20 +221,18 @@ exec_cc(char **argv)
 }
 
 static inline int
-loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc, const FILE *timestampsFile)
+loop_srcdir(const char *const srcdir, const char *const builddir, const char *const ext, char **argv, const int argc, const FILE *timestampsFile)
 {
 	DIR *dir = opendir(srcdir);
 	if(!dir)
 		return log_err(CANT_OPEN, CURPOS, "Source dir \"%s\"", srcdir);
 
 	/* loop through srcdir */
-	int fileCount = 0;
 	for(struct dirent *dirEntry = readdir(dir); dirEntry; dirEntry = readdir(dir))
 	{
 		if(!strends(dirEntry->d_name, ext))
 			continue;
 
-		fileCount++;
 		char *filePath = malloc(VALUE_SIZE);
 		if(!filePath)
 			return log_err(MALLOC, CURPOS, "Cant allocate path buffer");
@@ -227,17 +245,14 @@ loop_srcdir(const char *srcdir, const char *ext, char **argv, const int argc, co
 		if(!has_changed(timestampsFile, filePath, st.st_mtim.tv_sec))
 			continue;
 
-		if(fileCount > 0)
-			free(argv[ARGV_PATH_I]);
+		free(argv[ARGV_PATH_I]);
 		argv[ARGV_PATH_I] = filePath;
 
-		snprintf(strrchr(argv[ARGV_OUTPATH_I], '/') + 1, VALUE_SIZE / 2, "%i.o", fileCount);
+		char *filename = basename(filePath);
+		snprintf(strrchr(argv[ARGV_OUTPATH_I], '/') + 1, NAME_MAX - strlen(builddir) - 1, "%s.o", filename);
 
 		if(exec_cc(argv) < 0)
-		{
-			free(argv[ARGV_PATH_I]);
 			return -1;
-		}
 	}
 
 	closedir(dir);
@@ -267,9 +282,9 @@ compile(const struct data_t *data)
 		return log_err(CANT_OPEN, CURPOS, "Cant open semaphore");
 
 	int argc;
-	int i_firstOpt;
+	int first_opt;
 	char **argv;
-	if(make_argv(&argv, data, &argc, &i_firstOpt) < 0)
+	if(make_argv(&argv, data, &argc, &first_opt) < 0)
 		return -1;
 
 	const struct sigaction sig = { .sa_handler = sigchld_handler };
@@ -278,16 +293,16 @@ compile(const struct data_t *data)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, "\t "); srcdir; srcdir = strtok(NULL, "\t "))
 	{
-		if(loop_srcdir(srcdir, data->ext, argv, argc, timestampsFile) < 0)
+		if(loop_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile) < 0)
+		{
+			destroy_argv(&argv, argc, first_opt);
 			return -1;
+		}
 	}
 
 	fclose(timestampsFile);
 
-	for(; i_firstOpt < ARGV_OFLAG_I; ++i_firstOpt)
-		free(argv[i_firstOpt]);
-
-	free(argv);
+	destroy_argv(&argv, argc, first_opt);
 
 	return 0;
 }
