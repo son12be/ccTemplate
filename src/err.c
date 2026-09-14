@@ -47,11 +47,14 @@ report_err()
 		case MALLOC:
 			fprintf(stderr, "malloc() failed (%s)", strerror(errno));
 			break;
+		case NOMATCH:
+			fprintf(stderr, "A pattern expansion returned no match");
+			break;
 		default:
 			fprintf(stderr, "Assuming errno code: %s", strerror(errno));
 			break;
 	}
-	fprintf(stderr, ".\033[1;32m Hint: %s.\033[1;34m At %s \033[0m\n", s_Context, s_Location);
+	fprintf(stderr, ".\033[1;32m Hint: %s.\033[1;34m Error ocurred at %s (not _your_ source file) \033[0m\n", s_Context, s_Location);
 
 	return s_Code;
 }

@@ -7,6 +7,7 @@
 
 
 #include <libgen.h>
+#include <glob.h>
 #include <limits.h>
 #include <errno.h>
 #include <string.h>
@@ -37,38 +38,30 @@ static sem_t sem;
 void
 sigchld_handler(int)
 {
-	sem_post(&sem);
+	while(waitpid(-1, NULL, WNOHANG) > 0)
+		sem_post(&sem);
 }
 
 inline static int
 lines(FILE *file)
 {
-	if(!file)
-		return -1;
-
-	const int fd = fileno(file);
-	if(fd < 0)
-		return -1;
-
-	struct statfs st;
-	if(fstatfs(fd, &st) < 0)
-		return -1;
-
-	unsigned int lines = 0;
-	char buf[st.f_bsize];
-	int rc;
-	while((rc = read(fd, buf, sizeof(buf))) > 0)
-		for(int i = 0; i < rc; ++i)
-			if(buf[i] == '\n')
-				lines++;
+	int lines = 0;
+	char buf[VALUE_SIZE];
+	while(fgets(buf, sizeof(buf), file))
+		lines++;
 
 	rewind(file);
 
 	return lines;
 }
 
+/*
+ * first_opt should point one past '-c'.
+ * From first_opt and on, theres malloc'd buffers.
+ * Before first_opt, theres '-c' and then a strtok'd stack-allocated buffer
+ */
 inline static int
-make_argv(char ***ret, const struct data_t * const data, int * const argc, int * const first_opt)
+make_argv(char ***ret, const struct data_t *const data, int *const argc, int *const first_opt)
 {
 	*argc = 6; /* at least for cc, -c, filepath, -o; path, and NULL */
 
@@ -78,13 +71,13 @@ make_argv(char ***ret, const struct data_t * const data, int * const argc, int *
 	{
 		*argc += lines(data->flagFile);
 		if(*argc < 0)
-			return log_err(-errno, CURPOS, "Failure counting flagfile lines");
+			ERR(-errno, "Failure counting flagfile lines");
 	}
 
 	/* allocate */
 	*ret = malloc(sizeof(char*) * *argc);
 	if(!*ret)
-		return log_err(MALLOC, CURPOS, "Cant allocate argv");
+		ERR(MALLOC, "Cant allocate argv");
 
 	/* get args from data->cc */
 	int i_arg = 0;
@@ -101,8 +94,8 @@ make_argv(char ***ret, const struct data_t * const data, int * const argc, int *
 	/* get args from flagFile */
 	char *line = malloc(VALUE_SIZE / 2);
 	if(!line)
-		return log_err(MALLOC, CURPOS, "Cant allocate line buffer");
-	for(; (fgets(line, VALUE_SIZE, data->flagFile)) != NULL; ++i_arg)
+		ERR(MALLOC, "Cant allocate line buffer");
+	for(; (fgets(line, VALUE_SIZE / 2, data->flagFile)) != NULL; ++i_arg)
 	{
 		line[strcspn(line, "\n")] = '\0';
 		(*ret)[i_arg] = line;
@@ -113,7 +106,7 @@ make_argv(char ***ret, const struct data_t * const data, int * const argc, int *
 			for(int j = 0; j < i_arg; ++j)
 				free((*ret)[j]);
 			free(*ret);
-			return log_err(MALLOC, CURPOS, "Cant allocate line buffer");
+			ERR(MALLOC, "Cant allocate line buffer");
 		}
 	}
 
@@ -128,7 +121,7 @@ end:
 		for(int i = *first_opt; i < *ARGV_OFLAG_I; ++i)
 			free((*ret)[i]);
 		free(*ret);
-		return log_err(MALLOC, CURPOS, "Outpath allocation");
+		ERR(MALLOC, "Cant allocate outpath");
 	}
 
 	snprintf((*ret)[*ARGV_OUTPATH_I], maxLenSz, "%s/", data->builddir);
@@ -142,10 +135,9 @@ end:
 static void
 destroy_argv(char ***argv, int argc, int first_opt)
 {
-	for(; first_opt < ARGV_OFLAG_I; ++first_opt)
+	for(; first_opt < ARGV_PATH_I; ++first_opt)
 		free((*argv)[first_opt]);
 	free((*argv)[ARGV_OUTPATH_I]);
-	free(*argv);
 	*argv = NULL;
 }
 
@@ -202,7 +194,7 @@ exec_cc(char **argv)
 	pid_t pid = fork();
 	if(pid < 0)
 	{
-		return log_err(-errno, CURPOS, "Cant fork");
+		ERR(-errno, "Cant fork");
 	} else if(pid == 0) /* child */
 	{
 		/* TODO
@@ -215,7 +207,7 @@ exec_cc(char **argv)
 		execvp(argv[0], argv);
 
 		/* if exec returns, then it failed */
-		log_err(-errno, CURPOS, "Cant execute \"%s\"", argv[0]);
+		log_err(-errno, "Cant execute \"%s\"", argv[0]);
 		report_err(); /* report now or never */
 		exit(errno); /* Children shall never return */
 	} else /* parent */
@@ -225,48 +217,60 @@ exec_cc(char **argv)
 }
 
 static inline int
-loop_srcdir(const char *const srcdir, const char *const builddir, const char *const ext, char **argv, const int argc, const FILE *timestampsFile)
+compile_srcdir(const char *const srcdir, const char *const builddir, const char *const ext, char **argv, const int argc, const FILE *timestampsFile)
 {
-	DIR *dir = opendir(srcdir);
+	const DIR *dir = opendir(srcdir);
 	if(!dir)
-		return log_err(CANT_OPEN, CURPOS, "Source dir \"%s\"", srcdir);
+		ERR(CANT_OPEN, "Source dir was \"%s\"", srcdir);
 
-	/* loop through srcdir */
-	for(struct dirent *dirEntry = readdir(dir); dirEntry; dirEntry = readdir(dir))
+	glob_t file_list;
+	char pattern[strlen(srcdir) + 1 + sizeof("*.") + strlen(ext)];
+
+	snprintf(pattern, sizeof(pattern), "%s/*.%s", srcdir, ext);
+
+	/* TODO maybe store rc? */
+	if(glob(pattern, GLOB_NOSORT, NULL, &file_list))
 	{
-		if(!strends(dirEntry->d_name, ext))
-			continue;
+		closedir(dir);
+		ERR(NOMATCH, "Pattern was \"%s\"", pattern);
+	}
 
-		free(argv[ARGV_PATH_I]);
-		argv[ARGV_PATH_I] = malloc(VALUE_SIZE);
-		if(!argv[ARGV_PATH_I])
-			return log_err(MALLOC, CURPOS, "Cant allocate path buffer");
-
-		snprintf(argv[ARGV_PATH_I], VALUE_SIZE, "%s/%s", srcdir, dirEntry->d_name);
+	/* loop through returned paths */
+	for(unsigned int i = 0; i < file_list.gl_pathc; ++i)
+	{
+		argv[ARGV_PATH_I] = file_list.gl_pathv[i];
 
 		struct stat st;
 		if(stat(argv[ARGV_PATH_I], &st) < 0)
-			return log_err(CANT_OPEN, CURPOS, "Cant allocate stat buffer");
+		{
+			ERR_NR(CANT_OPEN, "Cant get stat struct for file \"%s\"", argv[ARGV_PATH_I]);
+			goto err;
+		}
 		if(!has_changed(timestampsFile, argv[ARGV_PATH_I], st.st_mtim.tv_sec))
 			continue;
 
-		char *filename = basename(argv[ARGV_PATH_I]);
-		snprintf(strrchr(argv[ARGV_OUTPATH_I], '/') + 1, NAME_MAX - strlen(builddir) - 1, "%s.o", filename);
+		snprintf(argv[ARGV_OUTPATH_I], NAME_MAX + strlen(builddir) + 2, "%s/%s.o", builddir, basename(argv[ARGV_PATH_I]));
 
 		if(exec_cc(argv) < 0)
-			return -1;
+			goto err;
 	}
 
 	closedir(dir);
+	globfree(&file_list);
 
 	return 0;
+
+err:
+	closedir(dir);
+	globfree(&file_list);
+	return -1;
 }
 
 int
 compile(const struct data_t *data)
 {
 	FILE *timestampsFile;
-	if(access(CHANGEFILE_FILENAME, R_OK) < 0)
+	if(access(CHANGEFILE_FILENAME, F_OK) < 0)
 	{
 		timestampsFile = fopen(CHANGEFILE_FILENAME, "w+");
 	} else
@@ -274,20 +278,26 @@ compile(const struct data_t *data)
 		timestampsFile = fopen(CHANGEFILE_FILENAME, "r+");
 	}
 	if(!timestampsFile)
-		return log_err(CANT_OPEN, CURPOS, CHANGEFILE_FILENAME);
+		ERR(CANT_OPEN, CHANGEFILE_FILENAME);
 	
 	/* sem_init(3)§ERRORS
 	 * How can this even fail?
 	 * Note: by data->threads being too large
 	 */
 	if(sem_init(&sem, 0, data->threads) < 0)
-		return log_err(CANT_OPEN, CURPOS, "Cant open semaphore");
+	{
+		fclose(timestampsFile);
+		ERR(CANT_OPEN, "Cant open semaphore");
+	}
 
 	int argc;
 	int first_opt;
 	char **argv;
 	if(make_argv(&argv, data, &argc, &first_opt) < 0)
+	{
+		fclose(timestampsFile);
 		return -1;
+	}
 
 	const struct sigaction sig = { .sa_handler = sigchld_handler };
 	sigaction(SIGCHLD, &sig, NULL);
@@ -295,8 +305,10 @@ compile(const struct data_t *data)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, " "); srcdir; srcdir = strtok(NULL, " "))
 	{
-		if(loop_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile) < 0)
+		int rc;
+		if((rc = compile_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile)) < 0)
 		{
+			fclose(timestampsFile);
 			destroy_argv(&argv, argc, first_opt);
 			return -1;
 		}
@@ -304,6 +316,42 @@ compile(const struct data_t *data)
 
 	fclose(timestampsFile);
 
+	/* move eveything before first_opt by one to overwrite '-c' */
+	memmove(argv + 1, argv, sizeof(char*) * (first_opt - 1));
+	argv++; argc--; first_opt--;
+
+	/* Fuck it, simplier than having to deal with what to do with PATH */
+	argv[ARGV_PATH_I] = "-Wl,--as-needed";
+
+	glob_t file_list;
+	char pattern[strlen(data->builddir) + 1 + sizeof("*.o")];
+
+	snprintf(pattern, sizeof(pattern), "%s/*.o", data->builddir);
+	if(glob(pattern, GLOB_NOSORT, NULL, &file_list) != 0)
+	{
+		destroy_argv(&argv, argc, first_opt);
+		ERR(NOMATCH, "Pattern was \"%s\"", pattern);
+	}
+
+	// argv = realloc(argv, sizeof(char*) * (argc + file_list.gl_pathc + 1)); // argv[<first_opt] not malloc'd
+	int bytes = sizeof(char*) * (argc + file_list.gl_pathc + 1);
+	char **argv_cc = malloc(bytes);
+	memcpy(argv_cc, argv, bytes);
+	argv = argv_cc;
+
+	snprintf(argv[ARGV_OUTPATH_I], strlen(data->builddir) + NAME_MAX + 2, "%s/dummy", data->builddir);
+
+	memcpy(argv + ARGV_NULL_I, file_list.gl_pathv, sizeof(char*) * file_list.gl_pathc);
+	argc += file_list.gl_pathc;
+
+	for(int i = 0; i < argc; ++i)
+		printf("%s ", argv[i]);
+	printf("\n");
+
+	execvp(argv[0], argv);
+
+	fprintf(stderr, "%s: %s \n", argv[0], STRERROR);
+	globfree(&file_list);
 	destroy_argv(&argv, argc, first_opt);
 
 	return 0;
