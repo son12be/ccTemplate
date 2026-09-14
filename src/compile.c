@@ -38,8 +38,7 @@ static sem_t sem;
 void
 sigchld_handler(int)
 {
-	while(waitpid(-1, NULL, WNOHANG) > 0)
-		sem_post(&sem);
+	sem_post(&sem);
 }
 
 inline static int
@@ -305,8 +304,7 @@ compile(const struct data_t *data)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, " "); srcdir; srcdir = strtok(NULL, " "))
 	{
-		int rc;
-		if((rc = compile_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile)) < 0)
+		if(compile_srcdir(srcdir, data->builddir, data->ext, argv, argc, timestampsFile) < 0)
 		{
 			fclose(timestampsFile);
 			destroy_argv(&argv, argc, first_opt);
@@ -315,6 +313,9 @@ compile(const struct data_t *data)
 	}
 
 	fclose(timestampsFile);
+
+	/* reap all children */
+	while(waitpid(-1, NULL, WNOHANG) > 0);
 
 	/* move eveything before first_opt by one to overwrite '-c' */
 	memmove(argv + 1, argv, sizeof(char*) * (first_opt - 1));
@@ -339,12 +340,12 @@ compile(const struct data_t *data)
 	memcpy(argv_cc, argv, bytes);
 	argv = argv_cc;
 
-	snprintf(argv[ARGV_OUTPATH_I], strlen(data->builddir) + NAME_MAX + 2, "%s/dummy", data->builddir);
+	snprintf(argv[ARGV_OUTPATH_I], strlen(data->builddir) + NAME_MAX + 2, "%s/%s", data->builddir, data->name);
 
 	memcpy(argv + ARGV_NULL_I, file_list.gl_pathv, sizeof(char*) * file_list.gl_pathc);
 	argc += file_list.gl_pathc;
 
-	for(int i = 0; i < argc; ++i)
+	for(int i = 0; i < ARGV_NULL_I; ++i)
 		printf("%s ", argv[i]);
 	printf("\n");
 

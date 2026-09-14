@@ -19,6 +19,7 @@ struct data_t
 	char builddir[SMALL_VALUE_SIZE];
 	char ext[SMALLER_VALUE_SIZE];
 	char cc[VALUE_SIZE];
+	char name[SMALL_VALUE_SIZE];
 	unsigned int threads;
 	FILE *flagFile;
 };

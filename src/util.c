@@ -56,6 +56,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		{ "BUILDDIR", data->builddir, sizeof(data->builddir) },
 		{ "EXT", data->ext, sizeof(data->ext) },
 		{ "CC", data->cc, sizeof(data->cc) },
+		{ "NAME", data->name, sizeof(data->cc) },
 	};
 
 	char line[VALUE_SIZE];
@@ -105,7 +106,7 @@ parse_template(struct data_t *data, const char *templatePath)
 	
 	fclose(template);
 
-	if(!(data->srcdirs[0] && data->builddir[0] && data->cc[0] && data->ext[0]))
+	if(!(data->srcdirs[0] && data->builddir[0] && data->cc[0] && data->ext[0] && data->name[0]))
 		ERR(BAD_FORMAT, "One or more required options are not set");
 
 	return 0;
