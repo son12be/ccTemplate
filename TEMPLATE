@@ -3,7 +3,7 @@ NAME cc-dbg
 SRCDIRS src
 FLAGFILE compile_flags.txt
 BUILDDIR build
-CC clang -O3 -DDEBUG
+CC clang -O0 -ggdb3 -fsanitize=undefined -DDEBUG
 EXT c
 
 release:
