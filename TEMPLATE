@@ -1,0 +1,6 @@
+NAME cc
+SRCDIR src
+FLAGFILE compile_flags.txt
+BUILDDIR build
+CC clang -O3
+EXT c
