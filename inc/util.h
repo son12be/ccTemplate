@@ -28,4 +28,4 @@ int
 strends(const char *A, const char *B);
 
 int
-parse_template(struct data_t *data, const char *templatePath);
+parse_template(struct data_t *data);

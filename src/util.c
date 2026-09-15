@@ -44,11 +44,11 @@ trim_ws(const char **s)
 }
 
 int
-parse_template(struct data_t *data, const char *templatePath)
+parse_template(struct data_t *data)
 {
-	const FILE *template = fopen(templatePath, "r");
+	const FILE *template = fopen(TEMPLATE_FILENAME, "r");
 	if(!template)
-		ERR(CANT_OPEN, templatePath);
+		ERR(CANT_OPEN, "Template file (%s)", TEMPLATE_FILENAME);
 
 	struct tuple_t confTuples[] =
 	{
@@ -74,7 +74,7 @@ parse_template(struct data_t *data, const char *templatePath)
 		if(!value || *(++value) == '\0')
 		{
 			fclose(template);
-			ERR(BAD_FORMAT, "Tempate file (%s). At line \"%s\"", templatePath, line);
+			ERR(BAD_FORMAT, "Tempate file. At line \"%s\"", line);
 		}
 
 		*(value - 1) = '\0';

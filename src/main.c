@@ -1,10 +1,8 @@
 #include <stdio.h>
 #include <unistd.h>
-#include <string.h>
 #include <stdlib.h>
 
 #include "compile.h"
-#include "misc.h"
 #include "err.h"
 
 /* bro meson is so much better wtf */
@@ -12,7 +10,6 @@
 int
 main(int argc, char **argv)
 {
-	char templatePath[128] = TEMPLATE_FILENAME;
 	struct data_t data = 
 	{
 		.srcdirs = { 0 },
@@ -28,9 +25,6 @@ main(int argc, char **argv)
 	{
 		switch(opt)
 		{
-			case 'c':
-				memcpy(templatePath, optarg, sizeof(templatePath));
-				break;
 			case 'j':
 				data.threads = atoi(optarg);
 				if(data.threads == 0)
@@ -45,7 +39,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	if(parse_template(&data, templatePath) < 0)
+	if(parse_template(&data) < 0)
 		return report_err();
 
 	// printf("%s %s %s %s %s %i\n", data.srcdirs, data.incdirs, data.builddir, data.ext, data.cc, data.threads);
