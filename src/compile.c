@@ -69,7 +69,7 @@ make_argv(char ***ret, const struct data_t *const data, int *const argc, int *co
 	*argc = 6; /* at least for cc, -c, filepath, -o; path, and NULL */
 
 	/* get argc */
-	for(char *s = data->cc; (s = strrchr(s, ' ')); s++, (*argc)++);
+	for(char *s = data->cc; (s = strchr(s, ' ')) != NULL; s++, (*argc)++);
 	if(data->flagFile)
 	{
 		*argc += lines(data->flagFile);
