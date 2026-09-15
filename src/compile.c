@@ -315,7 +315,7 @@ compile(const struct data_t *data)
 	fclose(timestampsFile);
 
 	/* reap all children */
-	while(waitpid(-1, NULL, WNOHANG) > 0);
+	while(waitpid(-1, NULL, 0) > 0);
 
 	/* move eveything before first_opt by one to overwrite '-c' */
 	memmove(argv + 1, argv, sizeof(char*) * (first_opt - 1));
@@ -331,6 +331,7 @@ compile(const struct data_t *data)
 	if(glob(pattern, GLOB_NOSORT, NULL, &file_list) != 0)
 	{
 		destroy_argv(&argv, argc, first_opt);
+		globfree(&file_list);
 		ERR(NOMATCH, "Pattern was \"%s\"", pattern);
 	}
 
@@ -342,7 +343,7 @@ compile(const struct data_t *data)
 
 	snprintf(argv[ARGV_OUTPATH_I], strlen(data->builddir) + NAME_MAX + 2, "%s/%s", data->builddir, data->name);
 
-	memcpy(argv + ARGV_NULL_I, file_list.gl_pathv, sizeof(char*) * file_list.gl_pathc);
+	memcpy(argv + ARGV_NULL_I, file_list.gl_pathv, sizeof(char*) * (file_list.gl_pathc + 1));
 	argc += file_list.gl_pathc;
 
 	for(int i = 0; i < ARGV_NULL_I; ++i)
@@ -355,5 +356,5 @@ compile(const struct data_t *data)
 	globfree(&file_list);
 	destroy_argv(&argv, argc, first_opt);
 
-	return 0;
+	return -1;
 }

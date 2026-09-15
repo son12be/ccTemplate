@@ -39,6 +39,9 @@ main(int argc, char **argv)
 					return -1;
 				}
 				break;
+			case '?':
+				return -1;
+				break;
 		}
 	}
 
