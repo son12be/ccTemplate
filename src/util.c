@@ -44,11 +44,13 @@ trim_ws(const char **s)
 }
 
 int
-parse_template(struct data_t *data)
+parse_template(struct data_t *data, const char *const label)
 {
 	const FILE *template = fopen(TEMPLATE_FILENAME, "r");
 	if(!template)
 		ERR(CANT_OPEN, "Template file (%s)", TEMPLATE_FILENAME);
+
+	unsigned int cur_line = 0;
 
 	struct tuple_t confTuples[] =
 	{
@@ -60,27 +62,55 @@ parse_template(struct data_t *data)
 	};
 
 	char line[VALUE_SIZE];
+	if(!label)
+		goto parse;
+
+	const int label_len = strlen(label);
+	while(fgets(line, sizeof(line), template) != NULL)
+	{
+		cur_line++;
+		if(strncmp(line, label, label_len) == 0)
+			if(line[label_len] == ':')
+			{
+				// fseek(template, strchr(line, '\n') - line + 1, SEEK_CUR);
+				break;
+			}
+	}
+
+	if(feof(template))
+	{
+		fclose(template);
+		ERR(NOMATCH, "Cant find label \"%s\" inside \"%s\"", label, TEMPLATE_FILENAME);
+	}
+
+parse:
 	while((fgets(line, sizeof(line), template)) != NULL)
 	{
-		/* TODO clean this up */
-		/* ignore lines starting w/ '#' or a whitespace */
-		if(line[0] == '#' || isspace((unsigned char)line[0]))
+		cur_line++;
+		char *line_cc = line;
+		trim_ws(&line_cc);
+
+		if(line_cc[0] == '\0' || line_cc[0] == '#')
 			continue;
 
-		line[strcspn(line, "\n")] = '\0';
+		/* found another label, time to stop */
+		if(strstr(line_cc, ":\0"))
+			return 0;
+
+		line_cc[strcspn(line_cc, "\n")] = '\0';
 
 		/* find the whitespace between key and value */
-		char *value = strchr(line, ' ');
+		char *value = strchr(line_cc, ' ');
 		if(!value || *(++value) == '\0')
 		{
 			fclose(template);
-			ERR(BAD_FORMAT, "Tempate file. At line \"%s\"", line);
+			ERR(BAD_FORMAT, "Tempate file (%s). At line %i", TEMPLATE_FILENAME, cur_line);
 		}
 
 		*(value - 1) = '\0';
 
 		/* handle special cases */
-		if(streq(line, "FLAGFILE"))
+		if(streq(line_cc, "FLAGFILE"))
 		{
 			data->flagFile = fopen(value, "r");
 			if(!data->flagFile)
@@ -93,7 +123,7 @@ parse_template(struct data_t *data)
 		{
 			for(unsigned int i = 0; i < sizeof(confTuples) / sizeof(struct tuple_t); ++i)
 			{
-				if(!streq(line, confTuples[i].key))
+				if(!streq(line_cc, confTuples[i].key))
 					continue;
 
 				trim_ws(&value);

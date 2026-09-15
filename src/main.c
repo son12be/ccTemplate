@@ -39,7 +39,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	if(parse_template(&data) < 0)
+	if(parse_template(&data, argv[optind]) < 0)
 		return report_err();
 
 	// printf("%s %s %s %s %s %i\n", data.srcdirs, data.incdirs, data.builddir, data.ext, data.cc, data.threads);

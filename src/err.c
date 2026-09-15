@@ -13,12 +13,12 @@ log_err(const error_e code, const char *location, const char *fmt, ...)
 {
 	va_list vl;
 	va_start(vl, fmt);
-
 	vsnprintf(s_Context, sizeof(s_Context), fmt, vl);
-
 	va_end(vl);
 
+#ifdef DEBUG
 	s_Location = location;
+#endif
 
 	s_Code = code;
 
@@ -54,7 +54,12 @@ report_err()
 			fprintf(stderr, "Assuming errno code: %s", strerror(errno));
 			break;
 	}
-	fprintf(stderr, ".\033[1;32m Hint: %s.\033[1;34m Error ocurred at %s (not _your_ source file) \033[0m\n", s_Context, s_Location);
+
+#ifdef DEBUG
+	fprintf(stderr, ".\033[1;32m Hint: %s.\033[1;34m Error ocurred at %s (not your source file) \033[0m\n", s_Context, s_Location);
+#else
+	fprintf(stderr, ".\033[1;32m Hint: %s. \033[0m\n", s_Context);
+#endif
 
 	return s_Code;
 }

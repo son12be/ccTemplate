@@ -1,3 +1,12 @@
+debug:
+NAME cc
+SRCDIRS src
+FLAGFILE compile_flags.txt
+BUILDDIR build
+CC clang -O3 -DDEBUG
+EXT c
+
+release:
 NAME cc
 SRCDIRS src
 FLAGFILE compile_flags.txt
