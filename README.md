@@ -36,7 +36,8 @@ You can tell `cTemple` to recompile all source files it encounters with the `-f`
 Note that doing so will not result in `timestamps` being updated.
 
 ## .last_label file
-It stores the last label used. Due to how it works internally, if no label was used during the last run of `cTemple`, it will contain `ignore then exit`.
+It stores the last label used. Due to how it works internally, if no label was used
+during the last run of `cTemple`, it will contain `ignore then exit`.
 
 ## Builddir
 `cTemple` compiles the source files and leaves the resulting `.o` files inside _BUILDDIR_.
@@ -54,5 +55,4 @@ Global template somewhere in $XDG_CONFIG_HOME.
 
 ## BUGS
 Lots of them.\
-SEGV.\
-When compiling this project with the debug label, the -DPOSIX_C_SOURCE arg does not appear in argv?
+SEGV.
