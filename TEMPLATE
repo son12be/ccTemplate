@@ -1,5 +1,5 @@
 NAME cc
-SRCDIR src
+SRCDIRS src
 FLAGFILE compile_flags.txt
 BUILDDIR build
 CC clang -O3

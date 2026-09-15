@@ -52,7 +52,7 @@ parse_template(struct data_t *data)
 
 	struct tuple_t confTuples[] =
 	{
-		{ "SRCDIR", data->srcdirs, sizeof(data->srcdirs) },
+		{ "SRCDIRS", data->srcdirs, sizeof(data->srcdirs) },
 		{ "BUILDDIR", data->builddir, sizeof(data->builddir) },
 		{ "EXT", data->ext, sizeof(data->ext) },
 		{ "CC", data->cc, sizeof(data->cc) },
