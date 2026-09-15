@@ -44,7 +44,7 @@ trim_ws(const char **s)
 }
 
 int
-parse_template(struct data_t *data, const char *const label)
+parse_template(struct data_t *data)
 {
 	const FILE *template = fopen(TEMPLATE_FILENAME, "r");
 	if(!template)
@@ -62,14 +62,14 @@ parse_template(struct data_t *data, const char *const label)
 	};
 
 	char line[VALUE_SIZE];
-	if(!label)
+	if(!data->label)
 		goto parse;
 
-	const int label_len = strlen(label);
+	const int label_len = strlen(data->label);
 	while(fgets(line, sizeof(line), template) != NULL)
 	{
 		cur_line++;
-		if(strncmp(line, label, label_len) == 0)
+		if(strncmp(line, data->label, label_len) == 0)
 			if(line[label_len] == ':')
 			{
 				// fseek(template, strchr(line, '\n') - line + 1, SEEK_CUR);
@@ -80,7 +80,7 @@ parse_template(struct data_t *data, const char *const label)
 	if(feof(template))
 	{
 		fclose(template);
-		ERR(NOMATCH, "Cant find label \"%s\" inside \"%s\"", label, TEMPLATE_FILENAME);
+		ERR(NOMATCH, "Cant find label \"%s\" inside \"%s\"", data->label, TEMPLATE_FILENAME);
 	}
 
 parse:
@@ -95,7 +95,18 @@ parse:
 
 		/* found another label, time to stop */
 		if(strstr(line_cc, ":\0"))
-			return 0;
+		{
+			if(data->label)
+				goto end;
+			else
+			{
+				/* so than next time we hit a label we goto end.
+				 * In practice, it only uses the first label when the user doesnt provide one
+				 */
+				data->label = "ignore then exit";
+				continue;
+			}
+		}
 
 		line_cc[strcspn(line_cc, "\n")] = '\0';
 
@@ -134,6 +145,7 @@ parse:
 		}
 	}
 	
+end:
 	fclose(template);
 
 	if(!(data->srcdirs[0] && data->builddir[0] && data->cc[0] && data->ext[0] && data->name[0]))

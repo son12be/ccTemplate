@@ -3,4 +3,4 @@
 #include "util.h"
 
 int
-compile(const struct data_t *data);
+compile(const struct data_t *data, const int compile_anyways);

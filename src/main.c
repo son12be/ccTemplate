@@ -20,8 +20,9 @@ main(int argc, char **argv)
 		.flagFile = NULL,
 	};
 
+	int compile_anyways = 0;
 	int opt;
-	while((opt = getopt(argc, argv, "c:j:")) != -1)
+	while((opt = getopt(argc, argv, "j:fl:")) != -1)
 	{
 		switch(opt)
 		{
@@ -33,17 +34,23 @@ main(int argc, char **argv)
 					return -1;
 				}
 				break;
+			case 'f':
+				compile_anyways = 1;
+				break;
+			case 'l':
+				data.label = optarg;
+				break;
 			case '?':
 				return -1;
 				break;
 		}
 	}
 
-	if(parse_template(&data, argv[optind]) < 0)
+	if(parse_template(&data) < 0)
 		return report_err();
 
 	// printf("%s %s %s %s %s %i\n", data.srcdirs, data.incdirs, data.builddir, data.ext, data.cc, data.threads);
-	if(compile(&data) < 0)
+	if(compile(&data, compile_anyways) < 0)
 		return report_err();
 
 	/* We gotta do something about this

@@ -15,17 +15,18 @@ enum logLevel_e
 
 struct data_t
 {
+	char cc[VALUE_SIZE];
 	char srcdirs[VALUE_SIZE];
 	char builddir[SMALL_VALUE_SIZE];
-	char ext[SMALLER_VALUE_SIZE];
-	char cc[VALUE_SIZE];
 	char name[SMALL_VALUE_SIZE];
-	unsigned int threads;
+	char ext[SMALLER_VALUE_SIZE];
+	char *label;
 	FILE *flagFile;
+	unsigned int threads;
 };
 
 int
 strends(const char *A, const char *B);
 
 int
-parse_template(struct data_t *data, const char *const label);
+parse_template(struct data_t *data);

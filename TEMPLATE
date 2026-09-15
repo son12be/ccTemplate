@@ -1,5 +1,5 @@
 debug:
-NAME cc
+NAME cc-dbg
 SRCDIRS src
 FLAGFILE compile_flags.txt
 BUILDDIR build
