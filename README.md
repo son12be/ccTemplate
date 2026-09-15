@@ -1,6 +1,6 @@
 # Introduction
 ## TEMPLATE
-A file named `TEMPLATE` should be in your project directory, this file\
+A file named `TEMPLATE` should be in your project directory, this file
 specifies basic data for `cTemple` to compile your project.
 
 ### TEMPLATE contents
@@ -17,15 +17,15 @@ Aditionally, the template may contain:\
 # How it works
 ## timestamps file
 `cTemple` uses a file named `timestamps` to keep track of which source files to compile.\
-It contains a simple format of `<time-of-last-modification> <filename>`. `cTemple` compares each source file time-of-last-modification\
+It contains a simple format of `<time-of-last-modification> <filename>`. `cTemple` compares each source file time-of-last-modification
 inside each _SRCDIRS_ and if it results greater than the one in `timestamps` (or if its not even in the file), it gets compiled.\
 You may delete `timestamps`, which will cause `cTemple` to recompile all source files.\
-Note that the format says file<em>name</em>. Not file<em>path</em>.
+Note that the format says file<em>name</em>, not file<em>path</em>.
 
 ## Builddir
 `cTemple` compiles the source files and leaves the resulting `.o` files inside _BUILDDIR_.
-However, know that if you delete the `.o` files in _BUILDDIR_ but keep the corresponding filename in `timestamps`,\
-`cTemple` will fail to compile your binary unless you either: Manually decrement the timestamp in `timestamps`,\
+However, know that if you delete the `.o` files in _BUILDDIR_ but keep the corresponding filename in `timestamps`,
+`cTemple` will fail to compile your binary unless you either: Manually decrement the timestamp in `timestamps`,
 delete `timestamps` or modify the corresponding source file.
 
 
