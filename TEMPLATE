@@ -6,7 +6,7 @@ EXT c
 
 debug:
 NAME cc-dbg
-CC clang -O0 -ggdb3 -fsanitize=undefined -DDEBUG
+CC clang -O0 -ggdb3 -fsanitize=address -DDEBUG
 
 release:
 NAME cc

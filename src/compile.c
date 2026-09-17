@@ -249,7 +249,7 @@ compile_srcdir(const char *const srcdir, const struct data_t *data, char **argv,
 howdoinamethis:
 	const DIR *dir = opendir(srcdir);
 	if(!dir)
-		ERR(CANT_OPEN, "Source dir was \"%s\"", srcdir);
+		ERR(CANT_OPEN, "Cant open srcdir \"%s\"", srcdir);
 
 	glob_t file_list;
 	char pattern[strlen(srcdir) + 1 + sizeof("*.") + strlen(data->ext)];
@@ -368,7 +368,7 @@ compile(const struct data_t *data, const int compile_anyways)
 	// argv = realloc(argv, sizeof(char*) * (argc + file_list.gl_pathc + 1)); // argv[<first_opt] not malloc'd
 	int bytes = sizeof(char*) * (argc + file_list.gl_pathc + 1);
 	char **argv_cc = malloc(bytes);
-	memcpy(argv_cc, argv, bytes);
+	memcpy(argv_cc, argv, sizeof(char*) * argc);
 	argv = argv_cc;
 
 	snprintf(argv[ARGV_OUTPATH_I], strlen(data->builddir) + NAME_MAX + 2, "%s/%s", data->builddir, data->name);
