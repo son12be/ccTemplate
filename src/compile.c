@@ -336,13 +336,13 @@ compile(const struct data_t *data, const int compile_anyways)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, " "); srcdir; srcdir = strtok(NULL, " "))
 	{
-		waitpid(-1, NULL, 0);
 		if(compile_srcdir(srcdir, data, argv, argc, timestampsFile, compile_anyways) < 0)
 		{
 			fclose(timestampsFile);
 			destroy_argv(&argv, argc, first_opt);
 			return -1;
 		}
+		waitpid(-1, NULL, 0);
 	}
 
 	fclose(timestampsFile);

@@ -87,10 +87,7 @@ actual_parse(struct data_t *const data, const FILE *template, int cur_line)
 		/* find the whitespace between key and value */
 		char *value = strchr(line_cc, ' ');
 		if(!value || *(++value) == '\0')
-		{
-			fclose(template);
-			ERR(BAD_FORMAT, "Tempate file (%s). At line %i", TEMPLATE_FILENAME, cur_line);
-		}
+			ERR(BAD_FORMAT, "At line %i. Key lshould have a value", cur_line);
 
 		*(value - 1) = '\0';
 
@@ -99,10 +96,7 @@ actual_parse(struct data_t *const data, const FILE *template, int cur_line)
 		{
 			data->flagFile = fopen(value, "r");
 			if(!data->flagFile)
-			{
-				fclose(template);
-				ERR(CANT_OPEN,  value);
-			}
+				ERR(CANT_OPEN,  "At line %i. Cant open flagfile \"%s\"", cur_line, value);
 			continue;
 		}
 

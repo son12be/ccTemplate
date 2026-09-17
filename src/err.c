@@ -35,7 +35,7 @@ log_err(const error_e code, const char *fmt, ...)
 int
 report_err()
 {
-	fprintf(stderr, "\033[1;31m");
+	fprintf(stderr, "\033[1;31mError ocurred: \033[0;31m");
 
 	switch(s_Code)
 	{
@@ -62,10 +62,9 @@ report_err()
 			break;
 	}
 
+	fprintf(stderr, ".\033[1;32m\n\tDescription:\033[0;32m %s. \033[0m\n", s_Context);
 #ifdef DEBUG
-	fprintf(stderr, ".\033[1;32m Hint: %s.\033[1;34m Error ocurred at %s (not your source file) \033[0m\n", s_Context, s_Location);
-#else
-	fprintf(stderr, ".\033[1;32m Hint: %s. \033[0m\n", s_Context);
+	fprintf(stderr, "\033[1;34m\tAt %s\n", s_Location);
 #endif
 
 	return s_Code;
