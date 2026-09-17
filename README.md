@@ -33,7 +33,7 @@ Note that _cTemple_ does not discriminate between the _global label_ and other l
 _cTemple_ will output an `BAD_FORMAT` error.
 
 ## Options
-_cTemple_ accepts only 3 options:
+_cTemple_ accepts only 3 options:\
 &nbsp; **-jN**: Number of max parallel jobs to use, where `N` is the number.\
 &nbsp; **-f**: Dont check if file changed. Compile everything. Note that this does not trigger a `timestamps` update.\
 &nbsp; **-l** ***label***: Specify the *cur_label*.
