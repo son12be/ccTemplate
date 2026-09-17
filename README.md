@@ -48,9 +48,7 @@ delete `timestamps` or modify the corresponding source file.
 
 # TODO
 Most likely almost everything. Not even sure if multiple srcdirs work.\
-Also labels/presets such as `debug` or `release`.\
 Change `-f` to trigger an update of `timestamps`?\
-Global label?\
 Global template somewhere in $XDG_CONFIG_HOME.
 
 ## BUGS

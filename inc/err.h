@@ -10,6 +10,16 @@
 /* log err ECODE and return -1 */
 #define ERR(ECODE, ...) return ERR_NR(ECODE, __VA_ARGS__)
 
+#define FAIL(FUNC)\
+	if(FUNC < 0)\
+		return -1;
+#define FAIL_GOTO(FUNC, GOTO)\
+	if(FUNC < 0)\
+		goto GOTO;
+#define FAIL_CODE(FUNC, ECODE, ...)\
+	if(FUNC < 0)\
+		ERR(ECODE, __VA_ARGS__)
+
 #define STR(x) #x
 #define STR_HELPER(x) STR(x)
 #define CURPOS __FILE_NAME__ ":" STR_HELPER(__LINE__)

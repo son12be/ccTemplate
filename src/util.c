@@ -43,15 +43,9 @@ trim_ws(const char **s)
 	return *s;
 }
 
-int
-parse_template(struct data_t *data)
+static inline int
+actual_parse(struct data_t *const data, const FILE *template, int cur_line)
 {
-	const FILE *template = fopen(TEMPLATE_FILENAME, "r");
-	if(!template)
-		ERR(CANT_OPEN, "Template file (%s)", TEMPLATE_FILENAME);
-
-	unsigned int cur_line = 0;
-
 	struct tuple_t confTuples[] =
 	{
 		{ "SRCDIRS", data->srcdirs, sizeof(data->srcdirs) },
@@ -62,28 +56,6 @@ parse_template(struct data_t *data)
 	};
 
 	char line[VALUE_SIZE];
-	if(!data->label)
-		goto parse;
-
-	const int label_len = strlen(data->label);
-	while(fgets(line, sizeof(line), template) != NULL)
-	{
-		cur_line++;
-		if(strncmp(line, data->label, label_len) == 0)
-			if(line[label_len] == ':')
-			{
-				// fseek(template, strchr(line, '\n') - line + 1, SEEK_CUR);
-				break;
-			}
-	}
-
-	if(feof(template))
-	{
-		fclose(template);
-		ERR(NOMATCH, "Cant find label \"%s\" inside \"%s\"", data->label, TEMPLATE_FILENAME);
-	}
-
-parse:
 	while((fgets(line, sizeof(line), template)) != NULL)
 	{
 		cur_line++;
@@ -97,7 +69,7 @@ parse:
 		if(strstr(line_cc, ":\0"))
 		{
 			if(data->label)
-				goto end;
+				return 0;
 			else
 			{
 				/* so than next time we hit a label we goto end.
@@ -108,7 +80,7 @@ parse:
 			}
 		}
 
-		line_cc[strcspn(line_cc, "\n")] = '\0';
+		// line_cc[strcspn(line_cc, "\n")] = '\0'; // isspace considers '\n' as space
 
 		/* find the whitespace between key and value */
 		char *value = strchr(line_cc, ' ');
@@ -129,27 +101,72 @@ parse:
 				fclose(template);
 				ERR(CANT_OPEN,  value);
 			}
+			continue;
+		}
 
-		} else
+		for(unsigned int i = 0; i < sizeof(confTuples) / sizeof(struct tuple_t); ++i)
 		{
-			for(unsigned int i = 0; i < sizeof(confTuples) / sizeof(struct tuple_t); ++i)
-			{
-				if(!streq(line_cc, confTuples[i].key))
-					continue;
+			if(!streq(line_cc, confTuples[i].key))
+				continue;
 
-				trim_ws(&value);
+			trim_ws(&value);
 
-				/* This line makes me want to use C++ */
-				snprintf(confTuples[i].value, confTuples[i].maxSz, "%s", value);
-			}
+			/* This line makes me want to use C++ */
+			snprintf(confTuples[i].value, confTuples[i].maxSz, "%s", value);
 		}
 	}
+	return 0;
+}
+
+static inline int
+find_label(const FILE *template, const char *const label)
+{
+	rewind(template);
+	int cur_line = 0;
+
+	const int label_len = strlen(label);
+	for(char line[VALUE_SIZE]; fgets(line, sizeof(line), template) != NULL; )
+	{
+		cur_line++;
+		if(strncmp(line, label, label_len) == 0)
+			if(line[label_len] == ':')
+				return cur_line;
+	}
+
+	return -1;
+}
+
+/* NOTE
+ * Line count breaks if the line is larger than VALUE_SIZE - 1
+ */
+int
+parse_template(struct data_t *data)
+{
+	const FILE *template = fopen(TEMPLATE_FILENAME, "r");
+	if(!template)
+		ERR(CANT_OPEN, "Template file (%s)", TEMPLATE_FILENAME);
+
+	int cur_line = 0;
+	if((cur_line = find_label(template, "global")) >= 0)
+		FAIL_GOTO(actual_parse(data, template, cur_line), err);
+
+	/* C23§6.5.14 && operator guarantees left-to-right evaluation */
+	if(data->label && (cur_line = find_label(template, data->label)) >= 0)
+	{
+		FAIL_GOTO(actual_parse(data, template, cur_line), err);
+	} else
+	{
+		FAIL_GOTO(actual_parse(data, template, cur_line), err);
+	}
 	
-end:
 	fclose(template);
 
 	if(!(data->srcdirs[0] && data->builddir[0] && data->cc[0] && data->ext[0] && data->name[0]))
 		ERR(BAD_FORMAT, "One or more required options are not set");
 
 	return 0;
+
+err:
+	fclose(template);
+	return -1;
 }

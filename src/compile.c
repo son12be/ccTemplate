@@ -225,6 +225,7 @@ compile_srcdir(const char *const srcdir, const struct data_t *data, char **argv,
 	if(!data->label)
 		goto howdoinamethis;
 
+	/* update last_label */
 	{ /* if we dont add this scope, above goto would bypass init of VLA last_label and give err */
 		const int label_file_fd = open(LABEL_FILE, O_RDWR | O_CREAT, 0644);
 		if(label_file_fd < 0)
