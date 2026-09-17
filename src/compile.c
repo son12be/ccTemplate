@@ -335,6 +335,7 @@ compile(const struct data_t *data, const int compile_anyways)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, " "); srcdir; srcdir = strtok(NULL, " "))
 	{
+		waitpid(-1, NULL, 0);
 		if(compile_srcdir(srcdir, data, argv, argc, timestampsFile, compile_anyways) < 0)
 		{
 			fclose(timestampsFile);
@@ -344,9 +345,6 @@ compile(const struct data_t *data, const int compile_anyways)
 	}
 
 	fclose(timestampsFile);
-
-	/* reap all children */
-	while(waitpid(-1, NULL, 0) > 0);
 
 	/* move eveything before first_opt by one to overwrite '-c' */
 	memmove(argv + 1, argv, sizeof(char*) * (first_opt - 1));
