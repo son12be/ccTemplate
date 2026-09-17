@@ -5,22 +5,29 @@
 #include "err.h"
 
 static char s_Context[512];
-static char *s_Location = 0;
 static int s_Code = 0;
 
+#ifdef DEBUG
+	static char *s_Location = 0;
+#endif
+
 int
+#ifdef DEBUG
 log_err(const error_e code, const char *location, const char *fmt, ...)
+#else
+log_err(const error_e code, const char *fmt, ...)
+#endif
 {
 	va_list vl;
 	va_start(vl, fmt);
 	vsnprintf(s_Context, sizeof(s_Context), fmt, vl);
 	va_end(vl);
 
+	s_Code = code;
+
 #ifdef DEBUG
 	s_Location = location;
 #endif
-
-	s_Code = code;
 
 	return -1;
 }

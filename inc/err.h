@@ -5,7 +5,15 @@
 #define STRERROR strerror(errno)
 
 /* log err ECODE */
+#ifdef DEBUG
+#define STR(x) #x
+#define STR_HELPER(x) STR(x)
+#define CURPOS __FILE_NAME__ ":" STR_HELPER(__LINE__)
+
 #define ERR_NR(ECODE, ...) log_err(ECODE, CURPOS, __VA_ARGS__)
+#else
+#define ERR_NR(ECODE, ...) log_err(ECODE, __VA_ARGS__)
+#endif
 
 /* log err ECODE and return -1 */
 #define ERR(ECODE, ...) return ERR_NR(ECODE, __VA_ARGS__)
@@ -20,10 +28,6 @@
 	if(FUNC < 0)\
 		ERR(ECODE, __VA_ARGS__)
 
-#define STR(x) #x
-#define STR_HELPER(x) STR(x)
-#define CURPOS __FILE_NAME__ ":" STR_HELPER(__LINE__)
-
 typedef enum
 {
 	OK = 0,
@@ -35,7 +39,11 @@ typedef enum
 } error_e;
 
 int
+#ifdef DEBUG
 log_err(const error_e code, const char *location, const char *fmt, ...);
+#else
+log_err(const error_e code, const char *fmt, ...);
+#endif
 
 int
 report_err();
