@@ -1,4 +1,6 @@
 #include <string.h>
+#include <pwd.h>
+#include <unistd.h>
 #include <sys/param.h>
 #include <ctype.h>
 #include <stdarg.h>
@@ -148,15 +150,15 @@ parse_template(struct data_t *data)
 
 	int cur_line = 0;
 	if((cur_line = find_label(template, "global")) >= 0)
-		FAIL_GOTO(actual_parse(data, template, cur_line), err);
+		FAIL_GOTO(actual_parse(data, template, cur_line) < 0, err);
 
 	/* C23§6.5.14 && operator guarantees left-to-right evaluation */
 	if(data->label && (cur_line = find_label(template, data->label)) >= 0)
 	{
-		FAIL_GOTO(actual_parse(data, template, cur_line), err);
+		FAIL_GOTO(actual_parse(data, template, cur_line) < 0, err);
 	} else
 	{
-		FAIL_GOTO(actual_parse(data, template, cur_line), err);
+		FAIL_GOTO(actual_parse(data, template, cur_line) < 0, err);
 	}
 	
 	fclose(template);
