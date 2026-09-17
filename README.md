@@ -27,9 +27,9 @@ Using a diferent label than the one used for the last run of _cTemple_ will trig
 _cTemple_ searchs for a _global label_ (named simply `global`) before *cur_label*. This allows —for example— to specify _SRCDIRS_ only once.\
 All keys specified in the _global label_ may be overwritten by other labels.\
 Note that _cTemple_ does not discriminate between the _global label_ and other labels, thus, if:\
-&nbsp; the _global label_ is the first to appear in `TEMPLATE`;
-&nbsp; the user did not provide a label; and
-&nbsp; the _global label_ does not specify all the keys required for _cTemple_,
+&nbsp; the _global label_ is the first to appear in `TEMPLATE`;\
+&nbsp; the user did not provide a label; and\
+&nbsp; the _global label_ does not specify all the keys required for _cTemple_,\
 _cTemple_ will output an `BAD_FORMAT` error.
 
 ## Options
