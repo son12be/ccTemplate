@@ -30,12 +30,12 @@
 
 #include "compile.h"
 
-#define LABEL_FILE ".last_label"
-
 #define ARGV_NULL_I argc - 1
 #define ARGV_OUTPATH_I argc - 2
 #define ARGV_OFLAG_I argc - 3
 #define ARGV_PATH_I argc - 4
+
+#define SLASH 1
 
 static sem_t sem;
 
@@ -117,7 +117,11 @@ make_argv(char ***ret, const struct data_t *const data, int *const argc, int *co
 
 
 end:
-	int maxLenSz = strlen(data->builddir) + NAME_MAX + 2;
+	const int maxLenSz =
+		strlen(data->builddir) + SLASH +
+		strlen(data->label) + SLASH +
+		NAME_MAX +
+		1 /* NULL */;
 	(*ret)[*ARGV_OUTPATH_I] = malloc(maxLenSz);
 	if(!*ret)
 	{
@@ -126,8 +130,9 @@ end:
 		free(*ret);
 		ERR(MALLOC, "Cant allocate outpath");
 	}
-
-	snprintf((*ret)[*ARGV_OUTPATH_I], maxLenSz, "%s/", data->builddir);
+	snprintf((*ret)[*ARGV_OUTPATH_I], maxLenSz, "%s/%s/", data->builddir, data->label);
+	if(access((*ret)[*ARGV_OUTPATH_I], F_OK))
+		FAIL_CODE(mkdir((*ret)[*ARGV_OUTPATH_I], 0755), -errno, "Cant create directory \"%s\"", (*ret)[*ARGV_OUTPATH_I]);
 
 	(*ret)[*ARGV_OFLAG_I] = "-o";
 	(*ret)[*ARGV_PATH_I] = NULL;
@@ -144,44 +149,23 @@ destroy_argv(char ***argv, int argc, int first_opt)
 	*argv = NULL;
 }
 
-/*
- * Search in the (open) file for fileName, then compare currentTime with
- * oldTime to check blah blah blah
- */
 inline static int
-has_changed(FILE *file, const char *filePath, const time_t currentTime)
+has_changed(const char *const source_path, const char *const object_path)
 {
-	rewind(file);
-
-	char line[VALUE_SIZE];
-	while(fgets(line, sizeof(line), file) != NULL) /* lookup fileName */
-	{
-		line[strcspn(line, "\n")] = '\0';
-		const char *curPath = strchr(line, ' ');
-		if(!curPath)
-			continue;
-
-		curPath++;
-		if(!streq(curPath, filePath))
-			continue;
-
-		time_t oldTime;
-		sscanf(line, "%010lu", &oldTime);
-
-		if(oldTime >= currentTime)
-			return 0;
-
-		fseek(file, -strlen(line) - 1, SEEK_CUR);
-		fprintf(file, "%010lu", currentTime);
-
+	if(access(object_path, F_OK) != 0)
 		return 1;
-	}
 
-	/* add file if not found */
-	fseek(file, 0, SEEK_END);
-	fprintf(file, "%010lu %s\n", currentTime, filePath);
+	struct stat st;
+	time_t source_modtime;
+	time_t object_modtime;
 
-	return 1;
+	FAIL_CODE(stat(source_path, &st) < 0, CANT_OPEN, "Cant open stat struct for path \"%s\"", source_path);
+	source_modtime = st.st_mtim.tv_sec;
+
+	FAIL_CODE(stat(object_path, &st) < 0, CANT_OPEN, "Cant open stat struct for path \"%s\"", object_path);
+	object_modtime = st.st_mtim.tv_sec;
+	
+	return source_modtime > object_modtime;
 }
 
 /*
@@ -220,50 +204,29 @@ exec_cc(char **argv)
 }
 
 static inline int
-compile_srcdir(const char *const srcdir, const struct data_t *data, char **argv, const int argc, const FILE *timestampsFile, int compile_anyways)
+compile_srcdir(const char *const srcdir, const struct data_t *data, char **argv, const int argc, int compile_anyways)
 {
-	if(!data->label)
-		goto howdoinamethis;
-
-	/* update last_label */
-	{ /* if we dont add this scope, above goto would bypass init of VLA last_label and give err */
-		const int label_file_fd = open(LABEL_FILE, O_RDWR | O_CREAT, 0644);
-		if(label_file_fd < 0)
-			ERR(CANT_OPEN, "Cant open label file \"%s\"", LABEL_FILE);
-
-		const int label_file_len = lseek(label_file_fd, 0, SEEK_END);
-		lseek(label_file_fd, 0, SEEK_SET);
-		char last_label[label_file_len];
-		read(label_file_fd, last_label, sizeof(last_label));
-		last_label[label_file_len - 1] = '\0';
-		if(strcmp(data->label, last_label) != 0)
-		{
-			memset(last_label, 0, sizeof(last_label));
-			pwrite(label_file_fd, last_label, sizeof(last_label), 0);
-			pwrite(label_file_fd, data->label, strlen(data->label) + 1, 0);
-			close(label_file_fd);
-			compile_anyways = 1;
-		}
-	}
-
-howdoinamethis:
 	const DIR *dir = opendir(srcdir);
 	if(!dir)
 		ERR(CANT_OPEN, "Cant open srcdir \"%s\"", srcdir);
 
 	glob_t file_list;
-	char pattern[strlen(srcdir) + 1 + sizeof("*.") + strlen(data->ext)];
+	char pattern[
+		strlen(srcdir) + SLASH +
+		sizeof("*.") +
+		strlen(data->ext)];
 
 	snprintf(pattern, sizeof(pattern), "%s/*.%s", srcdir, data->ext);
 
 	/* TODO maybe store rc? */
-	if(glob(pattern, GLOB_NOSORT, NULL, &file_list))
+	if(glob(pattern, GLOB_NOSORT | GLOB_ERR, NULL, &file_list))
 	{
 		closedir(dir);
 		ERR(NOMATCH, "Pattern was \"%s\"", pattern);
 	}
 
 	/* loop through returned paths */
+	const char *outpath_end = strrchr(argv[ARGV_OUTPATH_I], '/') + 1;
 	for(unsigned int i = 0; i < file_list.gl_pathc; ++i)
 	{
 		argv[ARGV_PATH_I] = file_list.gl_pathv[i];
@@ -274,17 +237,19 @@ howdoinamethis:
 			ERR_NR(CANT_OPEN, "Cant get stat struct for file \"%s\"", argv[ARGV_PATH_I]);
 			goto err;
 		}
-		if(!compile_anyways && !has_changed(timestampsFile, argv[ARGV_PATH_I], st.st_mtim.tv_sec))
-			continue;
+		snprintf(outpath_end, NAME_MAX, "%s.o", basename(argv[ARGV_PATH_I]));
 
-		snprintf(argv[ARGV_OUTPATH_I], NAME_MAX + strlen(data->builddir) + 2,
-				"%s/%s.o",
-				data->builddir,
-				basename(argv[ARGV_PATH_I]));
+		int changed;
+		FAIL_GOTO((changed = has_changed(argv[ARGV_PATH_I], argv[ARGV_OUTPATH_I])) < 0, err);
+		if(!compile_anyways && changed == 0)
+			continue;
 
 		if(exec_cc(argv) < 0)
 			goto err;
 	}
+
+	const int dir_fd = dirfd(dir);
+	FAIL(fsync(dir_fd));
 
 	closedir(dir);
 	globfree(&file_list);
@@ -298,37 +263,20 @@ err:
 }
 
 int
-compile(const struct data_t *data, const int compile_anyways)
+compile(struct data_t *data, const int compile_anyways)
 {
-	FILE *timestampsFile;
-	if(access(CHANGEFILE_FILENAME, F_OK) < 0)
-	{
-		timestampsFile = fopen(CHANGEFILE_FILENAME, "w+");
-	} else
-	{
-		timestampsFile = fopen(CHANGEFILE_FILENAME, "r+");
-	}
-	if(!timestampsFile)
-		ERR(CANT_OPEN, CHANGEFILE_FILENAME);
-	
-	/* sem_init(3)§ERRORS
-	 * How can this even fail?
-	 * Note: by data->threads being too large
-	 */
 	if(sem_init(&sem, 0, data->threads) < 0)
 	{
-		fclose(timestampsFile);
 		ERR(CANT_OPEN, "Cant open semaphore");
 	}
+
+	if(!data->label)
+		data->label = "";
 
 	int argc;
 	int first_opt;
 	char **argv;
-	if(make_argv(&argv, data, &argc, &first_opt) < 0)
-	{
-		fclose(timestampsFile);
-		return -1;
-	}
+	FAIL(make_argv(&argv, data, &argc, &first_opt) < 0);
 
 	const struct sigaction sig = { .sa_handler = sigchld_handler };
 	sigaction(SIGCHLD, &sig, NULL);
@@ -336,16 +284,13 @@ compile(const struct data_t *data, const int compile_anyways)
 	/* loop through specified srcdirs */
 	for(char *srcdir = strtok(data->srcdirs, " "); srcdir; srcdir = strtok(NULL, " "))
 	{
-		if(compile_srcdir(srcdir, data, argv, argc, timestampsFile, compile_anyways) < 0)
+		if(compile_srcdir(srcdir, data, argv, argc, compile_anyways) < 0)
 		{
-			fclose(timestampsFile);
 			destroy_argv(&argv, argc, first_opt);
 			return -1;
 		}
 		waitpid(-1, NULL, 0);
 	}
-
-	fclose(timestampsFile);
 
 	/* move eveything before first_opt by one to overwrite '-c' */
 	memmove(argv + 1, argv, sizeof(char*) * (first_opt - 1));
@@ -355,10 +300,13 @@ compile(const struct data_t *data, const int compile_anyways)
 	argv[ARGV_PATH_I] = "-Wl,--as-needed";
 
 	glob_t file_list;
-	char pattern[strlen(data->builddir) + 1 + sizeof("*.o")];
+	char pattern[
+		strlen(data->builddir) + SLASH +
+		strlen(data->label) + SLASH +
+		sizeof("*.o")];
 
-	snprintf(pattern, sizeof(pattern), "%s/*.o", data->builddir);
-	if(glob(pattern, GLOB_NOSORT, NULL, &file_list) != 0)
+	snprintf(pattern, sizeof(pattern), "%s/%s/*.o", data->builddir, data->label);
+	if(glob(pattern, GLOB_NOSORT | GLOB_ERR, NULL, &file_list) != 0)
 	{
 		destroy_argv(&argv, argc, first_opt);
 		globfree(&file_list);
@@ -371,7 +319,7 @@ compile(const struct data_t *data, const int compile_anyways)
 	memcpy(argv_cc, argv, sizeof(char*) * argc);
 	argv = argv_cc;
 
-	snprintf(argv[ARGV_OUTPATH_I], strlen(data->builddir) + NAME_MAX + 2, "%s/%s", data->builddir, data->name);
+	snprintf(strrchr(argv[ARGV_OUTPATH_I], '/') + 1, NAME_MAX, "%s", data->name);
 
 	memcpy(argv + ARGV_NULL_I, file_list.gl_pathv, sizeof(char*) * (file_list.gl_pathc + 1));
 	argc += file_list.gl_pathc;
@@ -382,7 +330,7 @@ compile(const struct data_t *data, const int compile_anyways)
 
 	execvp(argv[0], argv);
 
-	fprintf(stderr, "%s: %s \n", argv[0], STRERROR);
+	ERR_NR(-errno, "Cant exec \"%s\"", argv[0]);
 	globfree(&file_list);
 	destroy_argv(&argv, argc, first_opt);
 

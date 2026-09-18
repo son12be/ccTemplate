@@ -18,18 +18,18 @@
 /* log err ECODE and return -1 */
 #define ERR(ECODE, ...) return ERR_NR(ECODE, __VA_ARGS__)
 
-// #define FAIL(EXPR)\
-// 	if(EXPR)\
-// 		return -1;
+#define FAIL(EXPR)\
+	if(EXPR)\
+		return -1;
 // #define FAIL_NULL(EXPR)\
 // 	if(!(EXPR))\
 // 		return -1;
 #define FAIL_GOTO(EXPR, GOTO)\
 	if(EXPR)\
 		goto GOTO;
-// #define FAIL_CODE(EXPR, ECODE, ...)\
-// 	if(EXPR)\
-// 		ERR(ECODE, __VA_ARGS__)
+#define FAIL_CODE(EXPR, ECODE, ...)\
+	if(EXPR)\
+		ERR(ECODE, __VA_ARGS__)
 
 typedef enum
 {

@@ -46,17 +46,9 @@ trim_ws(const char **s)
 }
 
 static inline int
-actual_parse(struct data_t *const data, const FILE *template, int cur_line)
+actual_parse(struct data_t *const data, const FILE *template, int cur_line, struct tuple_t *const confTuples, const unsigned int n)
 {
-	struct tuple_t confTuples[] =
-	{
-		{ "SRCDIRS", data->srcdirs, sizeof(data->srcdirs) },
-		{ "BUILDDIR", data->builddir, sizeof(data->builddir) },
-		{ "EXT", data->ext, sizeof(data->ext) },
-		{ "CC", data->cc, sizeof(data->cc) },
-		{ "NAME", data->name, sizeof(data->cc) },
-	};
-
+	int label_hit = data->label ? 1 : 0;
 	char line[VALUE_SIZE];
 	while((fgets(line, sizeof(line), template)) != NULL)
 	{
@@ -70,14 +62,11 @@ actual_parse(struct data_t *const data, const FILE *template, int cur_line)
 		/* found another label, time to stop */
 		if(strstr(line_cc, ":\0"))
 		{
-			if(data->label)
+			if(label_hit)
 				return 0;
 			else
 			{
-				/* so than next time we hit a label we goto end.
-				 * In practice, it only uses the first label when the user doesnt provide one
-				 */
-				data->label = "ignore then exit";
+				label_hit = 1;
 				continue;
 			}
 		}
@@ -100,7 +89,7 @@ actual_parse(struct data_t *const data, const FILE *template, int cur_line)
 			continue;
 		}
 
-		for(unsigned int i = 0; i < sizeof(confTuples) / sizeof(struct tuple_t); ++i)
+		for(unsigned int i = 0; i < n; ++i)
 		{
 			if(!streq(line_cc, confTuples[i].key))
 				continue;
@@ -111,6 +100,8 @@ actual_parse(struct data_t *const data, const FILE *template, int cur_line)
 			snprintf(confTuples[i].value, confTuples[i].maxSz, "%s", value);
 		}
 	}
+	if(errno)
+		ERR(-errno, "Failed while parsing template");
 	return 0;
 }
 
@@ -119,6 +110,8 @@ find_label(const FILE *template, const char *const label)
 {
 	rewind(template);
 	int cur_line = 0;
+	if(!label)
+		goto first_label;
 
 	const int label_len = strlen(label);
 	for(char line[VALUE_SIZE]; fgets(line, sizeof(line), template) != NULL; )
@@ -130,6 +123,19 @@ find_label(const FILE *template, const char *const label)
 	}
 
 	return -1;
+
+first_label:
+	for(char line[VALUE_SIZE]; fgets(line, sizeof(line), template) != NULL; )
+	{
+		cur_line++;
+		char *colon = strrchr(line, ':');
+		if(!colon)
+			continue;
+
+		return cur_line;
+	}
+
+	return 0;
 }
 
 /* NOTE
@@ -142,23 +148,38 @@ parse_template(struct data_t *data)
 	if(!template)
 		ERR(CANT_OPEN, "Template file (%s)", TEMPLATE_FILENAME);
 
+	struct tuple_t confTuples[] =
+	{
+		{ "SRCDIRS", data->srcdirs, sizeof(data->srcdirs) },
+		{ "BUILDDIR", data->builddir, sizeof(data->builddir) },
+		{ "EXT", data->ext, sizeof(data->ext) },
+		{ "CC", data->cc, sizeof(data->cc) },
+		{ "NAME", data->name, sizeof(data->cc) },
+	};
+
 	int cur_line = 0;
 	if((cur_line = find_label(template, "global")) >= 0)
-		FAIL_GOTO(actual_parse(data, template, cur_line) < 0, err);
+	{
+		// if(!data->label) data->label = "global";
+		FAIL_GOTO(actual_parse(data, template, cur_line, confTuples, sizeof(confTuples) / sizeof(struct tuple_t)) < 0, err);
+	}
 
-	/* C23§6.5.14 && operator guarantees left-to-right evaluation */
-	if(data->label && (cur_line = find_label(template, data->label)) >= 0)
+	if((cur_line = find_label(template, data->label)) >= 0)
 	{
-		FAIL_GOTO(actual_parse(data, template, cur_line) < 0, err);
-	} else
+		FAIL_GOTO(actual_parse(data, template, cur_line, confTuples, sizeof(confTuples) / sizeof(struct tuple_t)) < 0, err);
+	} else 
 	{
-		FAIL_GOTO(actual_parse(data, template, cur_line) < 0, err);
+		ERR_NR(NOMATCH, "Cant find label \"%s\" in TEMPLATE", data->label);
+		goto err;
 	}
 	
 	fclose(template);
 
-	if(!(data->srcdirs[0] && data->builddir[0] && data->cc[0] && data->ext[0] && data->name[0]))
-		ERR(BAD_FORMAT, "One or more required options are not set");
+	for(unsigned int i = 0; i < sizeof(confTuples) / sizeof(struct tuple_t); ++i)
+	{
+		if(!((char*)confTuples[i].value)[0])
+			ERR(BAD_FORMAT, "A value for key \"%s\" is required", confTuples[i].key);
+	}
 
 	return 0;
 

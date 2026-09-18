@@ -7,7 +7,7 @@ specifies basic data for _cTemple_ to compile your project.
 The template shall have:\
 &nbsp; **NAME**: The name of your final binary. Placed inside _BUILDDIR_.\
 &nbsp; **SRCDIRS**: Space-separated list of the directories where your source files are.\
-&nbsp; **BUILDDIR**: The directory to place `.o` files and the binary of your project.\
+&nbsp; **BUILDDIR**: The directory to place the binary of your project. In a _BUILDDIR_/*cur_label*/ format.\
 &nbsp; **CC**: The name of the compiler. You may provide additional arguments here.\
 &nbsp; **EXT**: The extension of your source files.
 
@@ -26,11 +26,7 @@ Using a diferent label than the one used for the last run of _cTemple_ will trig
 ### 'global' label
 _cTemple_ searchs for a _global label_ (named simply `global`) before *cur_label*. This allows —for example— to specify _SRCDIRS_ only once.\
 All keys specified in the _global label_ may be overwritten by other labels.\
-Note that _cTemple_ does not discriminate between the _global label_ and other labels, thus, if:\
-&nbsp; the _global label_ is the first to appear in `TEMPLATE`;\
-&nbsp; the user did not provide a label; and\
-&nbsp; the _global label_ does not specify all the keys required for _cTemple_,\
-_cTemple_ will output an `BAD_FORMAT` error.
+Note that _cTemple_ *does* discriminate between the _global label_ and other labels and it wont be considered if you dont specify *cur_label* (but it will be parsed).
 
 ## Options
 _cTemple_ accepts only 3 options:\
@@ -39,23 +35,9 @@ _cTemple_ accepts only 3 options:\
 &nbsp; **-l** ***label***: Specify the *cur_label*.
 
 # How it works
-## timestamps file
-_cTemple_ uses a file named `timestamps` to keep track of which source files to compile.\
-It contains a simple format of `<time-of-last-modification> <filepath>`. _cTemple_ compares each source file time-of-last-modification
-inside each _SRCDIRS_ and if it results greater than the one in `timestamps` (or if its not even in the file), it gets compiled.\
-You may delete `timestamps`, which will cause _cTemple_ to recompile all source files.\
-Note that the format says file<em>path</em>, not file<em>name</em>.
-
-## .last_label file
-It stores the last label used. Due to how it works internally, if no label was used
-during the last run of _cTemple_, it will contain `ignore then exit`.
-
 ## Builddir
-_cTemple_ compiles the source files and leaves the resulting `.o` files inside _BUILDDIR_.
-However, know that if you delete the `.o` files in _BUILDDIR_ but keep the corresponding filename in `timestamps`,
-_cTemple_ will fail to compile your binary unless you either: Manually decrement the timestamp in `timestamps`,
-delete `timestamps` or modify the corresponding source file.
-
+_cTemple_ compiles the source files and leaves the resulting `.o` files inside _BUILDDIR_/*cur_label*/.\
+_cTemple_ will recompile source files if the corresponding `.o` file is not in _BUILDDIR_/*cur_label*/.
 
 # TODO
 Most likely almost everything. Not even sure if multiple srcdirs work.\

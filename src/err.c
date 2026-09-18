@@ -55,7 +55,7 @@ report_err()
 			fprintf(stderr, "malloc() failed (%s)", strerror(errno));
 			break;
 		case NOMATCH:
-			fprintf(stderr, "A pattern expansion returned no match");
+			fprintf(stderr, "A search or pattern returned no match");
 			break;
 		default:
 			fprintf(stderr, "Assuming errno code: %s", strerror(errno));
